@@ -1,0 +1,109 @@
+\chapter{PROBLEM STATEMENT}
+
+\section{Introduction}
+Modern logistics and supply chain systems rely heavily on GPS-based shipment tracking to provide real-time visibility of goods in transit. Every day, millions of GPS position records are generated as shipments move across the globe through trucks, ships, trains, and aircraft. This data forms the backbone of supply chain visibility platforms, enabling businesses to track deliveries, estimate arrival times, optimize routes, and respond to disruptions.
+
+However, the quality of this GPS data is often compromised by various technical and operational issues. Poor data quality leads to incorrect tracking information being displayed to customers, flawed analytics, billing errors, and degraded trust in the tracking system. Therefore, robust validation mechanisms are essential to ensure data integrity before it reaches downstream consumers.
+
+This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly}---a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
+
+\section{Problem: Shipment Tracked by Multiple Vehicles}
+
+\subsection{Problem Description}
+In a correctly functioning tracking system, a shipment (such as a container, parcel, or pallet) should be associated with exactly one tracking device at any given time. The GPS positions reported for that shipment should represent the movement of a single physical vehicle carrying the goods.
+
+However, in real-world systems, the following erroneous scenarios occur:
+
+\textbf{Scenario A: Device Misconfiguration.} Multiple GPS tracking devices are incorrectly assigned to the same shipment ID in the system database. As a result, positions from two or more devices (potentially on different vehicles in different locations) are all recorded under one shipment.
+
+\textbf{Scenario B: Data Integration Errors.} When integrating data from multiple carrier partners or legacy systems, shipment IDs may collide or be incorrectly mapped. Two distinct shipments from different sources get merged into a single shipment record.
+
+\textbf{Scenario C: Duplicate Device Transmissions.} A malfunctioning device or network issue causes duplicate position records to be created, sometimes with slightly different coordinates or timestamps.
+
+\textbf{Scenario D: System Migration Issues.} During system migrations or updates, historical data from old tracking devices may get incorrectly linked with new device data for the same shipment ID.
+
+\subsection{Observable Symptoms}
+When a shipment is tracked by multiple vehicles, the position history exhibits characteristic patterns:
+
+\begin{itemize}
+    \item \textbf{Impossible Teleportation:} Consecutive positions show the shipment at locations that are physically impossible to reach in the elapsed time. For example, a position in Shanghai at 10:00 AM followed by a position in Shenzhen (1,200 km away) at 10:05 AM would require traveling at 14,400 km/h.
+    \item \textbf{Oscillating Locations:} The shipment appears to ``jump'' back and forth between two or more distinct geographic areas, as positions from different vehicles interleave in the timeline.
+    \item \textbf{Concurrent Distant Positions:} Multiple positions recorded at nearly the same timestamp show the shipment at vastly different locations simultaneously.
+\end{itemize}
+
+\subsection{Legitimate Exception: Vehicle Handovers}
+Not all multi-location patterns indicate errors. Legitimate handovers occur when:
+\begin{itemize}
+    \item A truck delivers a container to a port, and a ship picks it up.
+    \item An inter-modal transfer happens at a logistics hub.
+    \item A relay system where one truck hands off to another at designated points.
+\end{itemize}
+In these cases, there is a feasible transition: the shipment physically moves from one vehicle to another at a common location within a reasonable time window.
+
+\subsection{The Validation Challenge}
+The system must distinguish between the cases shown in Table~\ref{tab:validation_challenge}.
+
+\begin{table}[h]
+\centering
+\caption{Validation challenge: patterns and expected results}
+\label{tab:validation_challenge}
+\begin{tabular}{|p{45mm}|p{35mm}|p{40mm}|}
+\hline
+\textbf{Pattern} & \textbf{Cause} & \textbf{Expected Result} \\
+\hline
+All positions reachable in sequence & Single vehicle, normal tracking & VALID \\
+\hline
+Position gaps with feasible handover & Legitimate vehicle transfer & VALID \\
+\hline
+Concurrent positions at distant locations & Multi-device error & INVALID \\
+\hline
+Oscillating positions between two areas & Data integration error & INVALID \\
+\hline
+Few unreachable positions among many valid ones & GPS glitches or outliers & VALID (with tolerance) \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Business Impact}
+Failure to detect multi-vehicle tracking errors causes:
+\begin{itemize}
+    \item \textbf{Customer Confusion:} Tracking pages show shipments jumping between locations erratically.
+    \item \textbf{Incorrect ETAs:} Arrival time predictions become meaningless when location data is inconsistent.
+    \item \textbf{Billing Disputes:} Mileage-based billing calculations are corrupted by phantom movements.
+    \item \textbf{Operational Blindness:} Supply chain managers cannot trust the tracking data for decision-making.
+    \item \textbf{SLA Violations:} False delay alerts or missed actual delays due to corrupted position data.
+\end{itemize}
+
+\section{System Overview}
+
+Figure~\ref{fig:system_overview} illustrates the end-to-end pipeline of the proposed validation framework.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm and 0.5cm,
+    block/.style={rectangle, draw, fill=blue!8, text width=5cm, minimum height=1cm, align=center, rounded corners=3pt, font=\small},
+    decision/.style={diamond, draw, fill=orange!10, text width=2.8cm, minimum height=1cm, align=center, aspect=2, font=\small},
+    io/.style={trapezium, draw, fill=green!8, trapezium left angle=70, trapezium right angle=110, text width=4cm, minimum height=0.8cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+]
+    \node[io] (input) {Raw GPS Position Data};
+    \node[block, below=of input] (preprocess) {Preprocessing \\ {\footnotesize Filter invalid, sort by time}};
+    \node[block, below=of preprocess] (graph) {Build Position Reachability Graph \\ {\footnotesize Nodes = positions, Edges = reachable pairs}};
+    \node[block, below=of graph] (cluster) {Find Connected Components \\ {\footnotesize Initial clustering via reachability}};
+    \node[block, below=of cluster] (handover) {Handover Detection \& Merging \\ {\footnotesize Merge clusters with feasible transfers}};
+    \node[decision, below=1.5cm of handover] (decide) {Significant clusters $\geq 2$?};
+    \node[io, below left=1.2cm and -0.5cm of decide] (valid) {\textbf{VALID} \\ Single Vehicle};
+    \node[io, below right=1.2cm and -0.5cm of decide] (invalid) {\textbf{INVALID} \\ Multiple Vehicles};
+
+    \draw[arrow] (input) -- (preprocess);
+    \draw[arrow] (preprocess) -- (graph);
+    \draw[arrow] (graph) -- (cluster);
+    \draw[arrow] (cluster) -- (handover);
+    \draw[arrow] (handover) -- (decide);
+    \draw[arrow] (decide.west) -- ++(-0.6,0) node[above, font=\footnotesize] {No} |- (valid);
+    \draw[arrow] (decide.east) -- ++(0.6,0) node[above, font=\footnotesize] {Yes} |- (invalid);
+\end{tikzpicture}
+\caption{System overview: end-to-end validation pipeline}
+\label{fig:system_overview}
+\end{figure}

@@ -1,0 +1,227 @@
+\chapter{GRAPH FORMULATION}
+
+\section{Introduction}
+This chapter presents the formal graph-theoretic models for our shipment tracking validation problems. We transform raw GPS position data into structured graph representations that capture the essential relationships between data points. This abstraction enables us to leverage well-established graph algorithms and provides mathematical rigor to our validation approach.
+
+The key insight is that the problems can be viewed through the lens of connectivity: Are all positions connected through feasible physical movements?
+
+\section{Position Reachability Graph}
+
+\subsection{Intuition}
+Consider a shipment's position history as a sequence of events. If a single vehicle is tracking the shipment, then each position should be ``reachable'' from previous positions given the physical constraints of movement. Unreachable positions suggest either GPS errors (if few) or multiple vehicles (if many form distinct patterns).
+
+We model this as a directed graph where:
+\begin{itemize}
+    \item Each position is a node.
+    \item An edge exists between two positions if one can physically reach the other.
+    \item Connected components represent groups of positions that could belong to the same vehicle.
+\end{itemize}
+
+\subsection{Formal Definitions}
+
+\begin{definition}[Position]
+A position $p$ is a tuple $(\mathit{lat}, \mathit{lon}, t)$ where:
+\begin{itemize}
+    \item $\mathit{lat}$ is the latitude in decimal degrees, $\mathit{lat} \in [-90, 90]$,
+    \item $\mathit{lon}$ is the longitude in decimal degrees, $\mathit{lon} \in [-180, 180]$,
+    \item $t$ is the timestamp (Unix epoch or datetime).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Position Sequence]
+A position sequence $P$ for a shipment is an ordered set $P = \{p_1, p_2, \ldots, p_n\}$ sorted by timestamp such that $t_1 \leq t_2 \leq \cdots \leq t_n$.
+\end{definition}
+
+\begin{definition}[Reachability Predicate]
+Two positions $p_i$ and $p_j$ (where $t_i < t_j$) satisfy the reachability predicate, denoted $\mathrm{reachable}(p_i, p_j)$, if and only if
+\[
+\mathrm{haversine}(p_i, p_j) \leq V_{\max} \cdot (t_j - t_i),
+\]
+where:
+\begin{itemize}
+    \item $\mathrm{haversine}(p_i, p_j)$ is the great-circle distance in meters,
+    \item $V_{\max}$ is the maximum feasible speed (69.4 m/s = 250 km/h),
+    \item $(t_j - t_i)$ is the time difference in seconds.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Position Reachability Graph]
+Given a position sequence $P$, the Position Reachability Graph is a directed graph $G = (V, E)$ where:
+\begin{itemize}
+    \item $V = P$ (each position is a vertex),
+    \item $E = \{(p_i, p_j) : i < j \wedge \mathrm{reachable}(p_i, p_j)\}$.
+\end{itemize}
+Edges are directed from earlier positions to later positions.
+\end{definition}
+
+\subsection{Graph Properties}
+
+\begin{property}[Directed Acyclic Graph]
+The Position Reachability Graph $G$ is always a DAG.
+\end{property}
+\textit{Proof.} By construction, edges only go from positions with earlier timestamps to positions with later timestamps. Since $t_i < t_j$ for any edge $(p_i, p_j)$, there cannot exist a cycle. A cycle would require an edge from a later timestamp back to an earlier timestamp, which is impossible by our edge definition.
+
+\begin{property}[Temporal Ordering]
+The topological order of $G$ corresponds to the chronological order of positions.
+\end{property}
+
+\begin{property}[Transitivity]
+Reachability is not necessarily transitive. If $\mathrm{reachable}(p_1, p_2)$ and $\mathrm{reachable}(p_2, p_3)$, it does not imply $\mathrm{reachable}(p_1, p_3)$.
+\end{property}
+\textit{Example:} $p_1$ at Shanghai, $t=0$; $p_2$ at Hangzhou (180 km away), $t=2$ hours (reachable at 90 km/h); $p_3$ at Ningbo (additional 150 km), $t=3$ hours (reachable from $p_2$ at 150 km/h). Then $p_1$ to $p_3$ is 330 km in 3 hours = 110 km/h (still reachable). With tighter time constraints, transitivity can fail.
+
+\subsection{Extended Reachability with GPS Jitter Tolerance}
+Real GPS data contains noise. A position might appear slightly unreachable from its immediate predecessor due to GPS jitter, even though it belongs to the same vehicle. We extend reachability to check multiple recent positions.
+
+\begin{definition}[Jitter Window]
+The jitter window $W(p_j, C, \tau)$ for position $p_j$ with respect to cluster $C$ and time threshold $\tau$ is
+\[
+W(p_j, C, \tau) = \{p_i \in C : (t_j - t_i) \leq \tau\},
+\]
+the set of positions in cluster $C$ that are within $\tau$ seconds before $p_j$.
+\end{definition}
+
+\begin{definition}[Extended Reachability]
+Position $p_j$ is reachable from cluster $C$ with jitter tolerance if
+\[
+\mathrm{reachable\_extended}(p_j, C) = \exists p_i \in W(p_j, C, \tau) : \mathrm{reachable}(p_i, p_j),
+\]
+where $\tau = 1800$ seconds (30 minutes) in our implementation.
+\end{definition}
+
+\begin{definition}[Extended Position Reachability Graph]
+The Extended Position Reachability Graph $G' = (V, E')$ incorporates jitter tolerance: $V = P$, and
+\[
+E' = \{(p_i, p_j) : i < j \wedge (\mathrm{reachable}(p_i, p_j) \vee \mathrm{exists\_jitter\_path}(p_i, p_j))\},
+\]
+where $\mathrm{exists\_jitter\_path}$ checks if $p_j$ can be reached through recent positions.
+\end{definition}
+
+\subsection{Handover Graph Extension}
+To handle legitimate vehicle handovers, we introduce a second-level graph.
+
+\begin{definition}[Cluster]
+A cluster $C$ is a maximal set of positions that form a connected component in the Position Reachability Graph.
+\end{definition}
+
+\begin{definition}[Cluster Boundary]
+For a cluster $C$:
+\begin{itemize}
+    \item \textbf{Entry boundary:} $\mathrm{first}_k(C)$ = first $k$ positions by timestamp,
+    \item \textbf{Exit boundary:} $\mathrm{last}_k(C)$ = last $k$ positions by timestamp,
+\end{itemize}
+where $k = 5$ in our implementation.
+\end{definition}
+
+\begin{definition}[Handover Predicate]
+Two clusters $C_1$ and $C_2$ (where $C_1$ ends before $C_2$ starts) satisfy the handover predicate if
+\[
+\mathrm{handover}(C_1, C_2) = \exists p_i \in \mathrm{last}_k(C_1),\; p_j \in \mathrm{first}_k(C_2) : |t_i - t_j| \leq T_{\mathrm{HANDOVER}} \wedge \mathrm{reachable}(p_i, p_j),
+\]
+where $T_{\mathrm{HANDOVER}} = 28800$ seconds (8 hours).
+\end{definition}
+
+\begin{definition}[Handover Graph]
+Given clusters $\mathcal{C} = \{C_1, C_2, \ldots, C_m\}$, the Handover Graph is $H = (\mathcal{C}, E_H)$ where vertices are clusters and $E_H = \{(C_i, C_j) : \mathrm{handover}(C_i, C_j)\}$.
+\end{definition}
+
+\begin{definition}[Merged Cluster Graph]
+The Merged Cluster Graph is the transitive closure of the Handover Graph, where connected clusters are merged into single super-clusters.
+\end{definition}
+
+\section{Mathematical Properties and Theorems}
+
+\begin{theorem}[Single Component Implies Single Vehicle]
+If the Position Reachability Graph $G$ has exactly one weakly connected component, then all positions are consistent with single-vehicle tracking.
+\end{theorem}
+\textit{Proof.} A single connected component means every position is reachable from every other position through some path. Since each edge represents a feasible physical movement, the entire trajectory represents feasible single-vehicle movement.
+
+\begin{theorem}[Multiple Large Components Implies Multiple Vehicles]
+If $G$ has two or more connected components, each containing at least 10\% of total positions, then multiple vehicles are tracking the shipment.
+\end{theorem}
+\textit{Proof.} Two separate components with significant positions cannot both be GPS noise (which would be small, isolated clusters). The lack of edges between components means no feasible path exists between them, implying physically separate vehicles.
+
+\begin{theorem}[Handover Preserves Validity]
+If two components $C_1$ and $C_2$ can be merged via a valid handover, the merged component represents valid single-vehicle tracking (with transfer).
+\end{theorem}
+\textit{Proof.} The handover predicate ensures spatial and temporal proximity at the transfer point, consistent with a physical handover event.
+
+\section{Mapping to Standard Graph Problems}
+
+\begin{table}[h]
+\centering
+\caption{Mapping our problem to standard graph problems}
+\label{tab:graph_mapping}
+\begin{tabular}{|p{45mm}|p{50mm}|}
+\hline
+\textbf{Our Problem} & \textbf{Standard Graph Problem} \\
+\hline
+Initial clustering & Connected component finding \\
+\hline
+Cluster merging & Transitive closure \\
+\hline
+Significant cluster detection & Component size analysis \\
+\hline
+Handover detection & Bridge edge identification \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Handover Detection Flow}
+
+Figure~\ref{fig:handover_flow} shows the decision process for determining whether two clusters represent a legitimate vehicle handover.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=1cm,
+    block/.style={rectangle, draw, fill=blue!8, text width=5cm, minimum height=0.9cm, align=center, rounded corners=3pt, font=\small},
+    decision/.style={diamond, draw, fill=orange!10, text width=2.5cm, minimum height=0.9cm, align=center, aspect=2.2, font=\small},
+    result/.style={rectangle, draw, fill=green!15, text width=3.5cm, minimum height=0.7cm, align=center, rounded corners=3pt, font=\small\bfseries},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+]
+    \node[block] (start) {Get boundary positions \\ $\mathrm{last}_k(C_1)$ and $\mathrm{first}_k(C_2)$};
+    \node[decision, below=1.2cm of start] (time) {$|t_j - t_i| \leq T_H$ \\ (within 8h)?};
+    \node[decision, below=1.4cm of time] (reach) {$\mathrm{reachable}(p_i, p_j)$ \\ (speed feasible)?};
+    \node[result, below=1.2cm of reach] (merge) {MERGE clusters};
+    \node[result, right=2cm of time] (notime) {No handover \\ (try next pair)};
+    \node[result, right=2cm of reach] (noreach) {No handover \\ (try next pair)};
+
+    \draw[arrow] (start) -- (time);
+    \draw[arrow] (time) -- node[left, font=\footnotesize] {Yes} (reach);
+    \draw[arrow] (time) -- node[above, font=\footnotesize] {No} (notime);
+    \draw[arrow] (reach) -- node[left, font=\footnotesize] {Yes} (merge);
+    \draw[arrow] (reach) -- node[above, font=\footnotesize] {No} (noreach);
+\end{tikzpicture}
+\caption{Handover detection decision flow for cluster pair $(C_1, C_2)$}
+\label{fig:handover_flow}
+\end{figure}
+
+\section{Summary of Key Formulas}
+
+The following equations summarize the core mathematical foundations of the framework:
+
+\begin{equation}
+\label{eq:haversine}
+d(p_i, p_j) = 2R \cdot \arcsin\!\left(\sqrt{\sin^2\!\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_i)\cos(\phi_j)\sin^2\!\left(\frac{\Delta\lambda}{2}\right)}\right)
+\end{equation}
+
+\begin{equation}
+\label{eq:reachability}
+\mathrm{reachable}(p_i, p_j) \iff d(p_i,p_j) \leq V_{\max} \cdot (t_j - t_i)
+\end{equation}
+
+\begin{equation}
+\label{eq:jitter}
+\mathrm{reachable\_ext}(p_j, C) \iff \exists\, p_i \in W(p_j, C, \tau) : \mathrm{reachable}(p_i, p_j)
+\end{equation}
+
+\begin{equation}
+\label{eq:handover}
+\mathrm{handover}(C_1, C_2) \iff \exists\, p_i \in \mathrm{last}_k(C_1),\; p_j \in \mathrm{first}_k(C_2) : |t_i - t_j| \leq T_H \;\wedge\; \mathrm{reachable}(p_i, p_j)
+\end{equation}
+
+\begin{equation}
+\label{eq:significant}
+\mathrm{significant}(C) \iff |C| \geq \max\!\left(s_{\min},\; \alpha \cdot n\right)
+\end{equation}

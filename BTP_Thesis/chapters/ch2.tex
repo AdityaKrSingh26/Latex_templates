@@ -1,0 +1,223 @@
+\chapter{GRAPH THEORY BACKGROUND}
+
+\section{Graph Theory Fundamentals}
+
+\subsection{Basic Definitions}
+
+\begin{definition}[Graph]
+A graph $G$ is an ordered pair $G = (V, E)$ where:
+\begin{itemize}
+    \item $V$ is a set of vertices (also called nodes),
+    \item $E$ is a set of edges, where each edge connects two vertices.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Directed Graph]
+A directed graph (or digraph) is a graph where each edge has a direction. An edge from vertex $u$ to vertex $v$ is denoted as $(u, v)$ or $u \to v$, and is distinct from $(v, u)$.
+\end{definition}
+
+\begin{definition}[Weighted Graph]
+A weighted graph assigns a numerical value (weight) to each edge. Formally, it includes a weight function $w : E \to \mathbb{R}$ that maps edges to real numbers.
+\end{definition}
+
+\begin{definition}[Adjacency]
+Two vertices $u$ and $v$ are adjacent if there exists an edge connecting them. In a directed graph, $u$ is adjacent to $v$ if edge $(u, v)$ exists.
+\end{definition}
+
+\begin{definition}[Degree]
+The degree of a vertex $v$, denoted $\deg(v)$, is the number of edges incident to $v$. In directed graphs:
+\begin{itemize}
+    \item \textbf{In-degree:} Number of edges coming into $v$
+    \item \textbf{Out-degree:} Number of edges going out from $v$
+\end{itemize}
+\end{definition}
+
+\subsection{Paths and Connectivity}
+
+\begin{definition}[Path]
+A path in a graph is a sequence of vertices $(v_1, v_2, \ldots, v_k)$ such that each consecutive pair is connected by an edge. The length of the path is $k-1$ (number of edges).
+\end{definition}
+
+\begin{definition}[Connected Graph]
+An undirected graph is connected if there exists a path between every pair of vertices.
+\end{definition}
+
+\begin{definition}[Weakly Connected]
+A directed graph is weakly connected if replacing all directed edges with undirected edges results in a connected graph.
+\end{definition}
+
+\begin{definition}[Strongly Connected]
+A directed graph is strongly connected if there exists a directed path from every vertex to every other vertex.
+\end{definition}
+
+\begin{definition}[Connected Component]
+A connected component of a graph is a maximal subgraph in which every pair of vertices is connected by a path. A graph can have multiple connected components.
+\end{definition}
+
+\subsection{Special Graph Types}
+
+\begin{definition}[Directed Acyclic Graph (DAG)]
+A directed acyclic graph is a directed graph with no directed cycles. That is, there is no sequence of edges that starts and ends at the same vertex.
+\end{definition}
+
+\begin{definition}[Bipartite Graph]
+A bipartite graph is a graph whose vertices can be partitioned into two disjoint sets $U$ and $V$ such that every edge connects a vertex in $U$ to a vertex in $V$. No edge connects vertices within the same set.
+\end{definition}
+
+\begin{definition}[Complete Graph]
+A complete graph $K_n$ is a graph with $n$ vertices where every pair of vertices is connected by an edge.
+\end{definition}
+
+\begin{definition}[Tree]
+A tree is a connected acyclic graph. A tree with $n$ vertices has exactly $n-1$ edges.
+\end{definition}
+
+\subsection{Graph Representations}
+
+\textbf{Adjacency Matrix.} For a graph with $n$ vertices, the adjacency matrix $A$ is an $n \times n$ matrix where:
+\begin{itemize}
+    \item $A[i][j] = 1$ if edge $(i, j)$ exists,
+    \item $A[i][j] = 0$ otherwise.
+\end{itemize}
+For weighted graphs, $A[i][j]$ contains the edge weight instead of 1.
+
+\noindent Space complexity: $O(n^2)$. Edge lookup: $O(1)$. Finding all neighbors: $O(n)$.
+
+\textbf{Adjacency List.} Each vertex maintains a list of its adjacent vertices.
+
+\noindent Space complexity: $O(n + m)$ where $m$ is the number of edges. Edge lookup: $O(\text{degree})$. Finding all neighbors: $O(\text{degree})$.
+
+\textbf{Implicit Representation.} For some graphs, edges are not stored explicitly but computed on demand using a predicate function. This is memory-efficient when the graph is dense or the edge predicate is simple. Our solution uses implicit representation where edges are computed via the reachability predicate.
+
+\section{Spatial Data Concepts}
+
+\subsection{Geographic Coordinate Systems}
+
+\textbf{Latitude and Longitude.}
+\begin{itemize}
+    \item \textbf{Latitude} ($\phi$): Angular distance north or south of the equator, ranging from $-90$ to $+90$ degrees.
+    \item \textbf{Longitude} ($\lambda$): Angular distance east or west of the Prime Meridian, ranging from $-180$ to $+180$ degrees.
+\end{itemize}
+
+\textbf{Coordinate Conventions.}
+\begin{itemize}
+    \item Standard: (latitude, longitude)---used by most mapping applications.
+    \item GeoJSON: (longitude, latitude)---used in GeoJSON format and some APIs.
+\end{itemize}
+This inconsistency is a root cause of coordinate swap errors.
+
+\subsection{Distance Calculations}
+
+\textbf{Haversine Formula.} Calculates the great-circle distance between two points on a sphere given their latitudes and longitudes:
+\[
+\text{haversine}(p_1, p_2): \quad R = 6371 \text{ km (Earth's radius)}
+\]
+\[
+\Delta\phi = p_2.\text{lat} - p_1.\text{lat}, \quad \Delta\lambda = p_2.\text{lon} - p_1.\text{lon}
+\]
+\[
+a = \sin^2(\Delta\phi/2) + \cos(p_1.\text{lat}) \cdot \cos(p_2.\text{lat}) \cdot \sin^2(\Delta\lambda/2)
+\]
+\[
+c = 2 \cdot \arcsin(\sqrt{a}), \quad \text{distance} = R \cdot c
+\]
+
+Accuracy: Assumes spherical Earth; error less than 0.3\% compared to ellipsoidal calculations.
+
+\textbf{Vincenty Formula.} More accurate distance calculation using ellipsoidal Earth model. Computationally more expensive but provides millimeter accuracy. For our application, Haversine provides sufficient accuracy with better performance.
+
+\subsection{Speed Constraints and Reachability}
+We use 250 km/h (69.4 m/s) as a conservative upper bound for ground transport, allowing margin for GPS timestamp inaccuracies and brief high-speed segments.
+
+\textbf{Reachability Predicate.} Position $p_2$ is reachable from $p_1$ if:
+\[
+\text{distance}(p_1, p_2) \leq \text{MAX\_SPEED} \times (p_2.\text{time} - p_1.\text{time})
+\]
+This forms the basis for edge creation in our reachability graph.
+
+\section{Notation Index}
+
+Table~\ref{tab:notation} summarizes the mathematical notation used throughout this report.
+
+\begin{table}[ht]
+\centering
+\caption{Index of notation and symbols}
+\label{tab:notation}
+\begin{tabular}{|c|p{85mm}|}
+\hline
+\textbf{Symbol} & \textbf{Description} \\
+\hline
+$G = (V, E)$ & Graph with vertex set $V$ and edge set $E$ \\
+\hline
+$p_i = (\mathit{lat}, \mathit{lon}, t)$ & Position tuple: latitude, longitude, timestamp \\
+\hline
+$P = \{p_1, \ldots, p_n\}$ & Position sequence sorted by timestamp \\
+\hline
+$V_{\max}$ & Maximum feasible speed (69.4 m/s = 250 km/h) \\
+\hline
+$\mathrm{haversine}(p_i, p_j)$ & Great-circle distance between two positions \\
+\hline
+$\mathrm{reachable}(p_i, p_j)$ & Reachability predicate: $\text{dist} \leq V_{\max} \cdot \Delta t$ \\
+\hline
+$C_k$ & Cluster (connected component) of positions \\
+\hline
+$\mathcal{C} = \{C_1, \ldots, C_m\}$ & Set of all clusters \\
+\hline
+$\tau$ & Jitter tolerance window (1800 s = 30 min) \\
+\hline
+$W(p_j, C, \tau)$ & Jitter window: recent positions within $\tau$ seconds \\
+\hline
+$T_{\mathrm{HANDOVER}}$ & Handover time window (28800 s = 8 hours) \\
+\hline
+$\mathrm{first}_k(C)$, $\mathrm{last}_k(C)$ & First/last $k$ boundary positions of cluster $C$ \\
+\hline
+$H = (\mathcal{C}, E_H)$ & Handover Graph over clusters \\
+\hline
+$\alpha$ & Minimum cluster percentage threshold (0.10) \\
+\hline
+$s_{\min}$ & Minimum cluster size threshold (5) \\
+\hline
+$R$ & Earth's radius (6,371,000 m) \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Graph Construction Overview}
+
+Figure~\ref{fig:graph_construction} illustrates how raw GPS data is transformed into graph structures for analysis.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.9cm,
+    stage/.style={rectangle, draw, fill=blue!8, text width=10cm, minimum height=1cm, align=center, rounded corners=3pt, font=\small},
+    label/.style={font=\footnotesize\itshape, text=gray},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+]
+    \node[stage] (s1) {\textbf{Raw Positions} \\ $\{(\mathit{lat}_1, \mathit{lon}_1, t_1), (\mathit{lat}_2, \mathit{lon}_2, t_2), \ldots\}$};
+    \node[label, right=0.2cm of s1] {Input};
+
+    \node[stage, below=of s1] (s2) {\textbf{Sorted \& Filtered Positions} \\ $P = \{p_1, p_2, \ldots, p_n\}$ where $t_1 \leq t_2 \leq \cdots \leq t_n$};
+    \node[label, right=0.2cm of s2] {Preprocessing};
+
+    \node[stage, below=of s2] (s3) {\textbf{Position Reachability Graph} $G = (V, E)$ \\ $V = P$, \quad $E = \{(p_i, p_j) : i < j \wedge \mathrm{reachable}(p_i, p_j)\}$};
+    \node[label, right=0.2cm of s3] {Graph Build};
+
+    \node[stage, below=of s3] (s4) {\textbf{Connected Components} $\mathcal{C} = \{C_1, C_2, \ldots, C_m\}$ \\ Each $C_k$ = positions reachable from each other};
+    \node[label, right=0.2cm of s4] {Clustering};
+
+    \node[stage, below=of s4] (s5) {\textbf{Handover Graph} $H = (\mathcal{C}, E_H)$ \\ Merge clusters connected by feasible handovers};
+    \node[label, right=0.2cm of s5] {Merging};
+
+    \node[stage, below=of s5] (s6) {\textbf{Validation Result}: TRUE / FALSE / UNCERTAIN \\ Based on number of significant clusters ($|C_k| \geq \alpha \cdot n$)};
+    \node[label, right=0.2cm of s6] {Decision};
+
+    \draw[arrow] (s1) -- (s2);
+    \draw[arrow] (s2) -- (s3);
+    \draw[arrow] (s3) -- (s4);
+    \draw[arrow] (s4) -- (s5);
+    \draw[arrow] (s5) -- (s6);
+\end{tikzpicture}
+\caption{Graph construction pipeline: from raw GPS data to validation result}
+\label{fig:graph_construction}
+\end{figure}

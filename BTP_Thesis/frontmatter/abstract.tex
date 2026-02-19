@@ -1,0 +1,18 @@
+\newpage
+\addcontentsline{toc}{chapter}{ABSTRACT}
+\begin{center}
+{\large \bf ABSTRACT}
+\end{center}
+
+Shipment tracking systems depend on GPS position data to provide real-time visibility, accurate ETAs, and reliable operational insights. In production environments, this data is often affected by device errors, data integration issues, and system inconsistencies. One critical failure case occurs when a single shipment is incorrectly associated with multiple tracking vehicles, leading to physically impossible movement patterns such as long-distance jumps, oscillating locations, or simultaneous positions in different places. These errors severely impact customer trust, billing accuracy, and operational decision-making.
+
+This report proposes a graph-theoretic framework to detect and validate such multi-vehicle tracking anomalies. Each GPS position is modeled as a node in a directed graph, and edges are created only when movement between two positions is physically feasible within realistic speed and time constraints. The resulting Position Reachability Graph allows shipment trajectories to be analyzed through connectivity rather than ad-hoc rules.
+
+Connected components in the graph represent sets of positions that could belong to a single vehicle. The presence of multiple large, disconnected components indicates concurrent tracking by multiple vehicles. To account for real-world GPS noise, the framework incorporates jitter tolerance, ensuring that minor measurement errors do not cause incorrect fragmentation of valid trajectories.
+
+Legitimate vehicle handovers, such as inter-modal transfers at ports or hubs, are handled using a secondary clustering and merging process based on spatial and temporal proximity. This prevents valid handovers from being misclassified as errors.
+
+The proposed approach is mathematically rigorous, computationally efficient, and suitable for large-scale deployment. By framing shipment validation as a graph connectivity problem, the system provides a robust, explainable, and reliable solution for improving data quality in shipment tracking platforms.
+
+\vspace{0.3in}
+\textit{Keywords:} Shipment Tracking, Multi-Vehicle Detection, Connected Components, Position Reachability Graph, GPS Validation, Graph Theory

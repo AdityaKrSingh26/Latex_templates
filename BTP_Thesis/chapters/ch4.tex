@@ -1,0 +1,368 @@
+\chapter{ALGORITHM DESIGN AND SOLUTION APPROACH}
+
+\section{Introduction}
+This chapter presents the detailed algorithms for solving the shipment tracking validation problem. Building on the graph formulations from Chapter 3, we develop step-by-step procedures with pseudocode, analyze their correctness, and evaluate computational complexity.
+
+The algorithms are designed with the following principles:
+\begin{itemize}
+    \item \textbf{Correctness:} Produce accurate validation results based on graph properties.
+    \item \textbf{Efficiency:} Process large position datasets in reasonable time.
+    \item \textbf{Robustness:} Handle edge cases and noisy real-world data.
+    \item \textbf{Interpretability:} Provide diagnostic information for debugging.
+\end{itemize}
+
+\section{Single Vehicle Detection Algorithm}
+
+\subsection{Algorithm Overview}
+The Single Vehicle Detection algorithm consists of three main phases:
+
+\begin{itemize}
+    \item \textbf{INPUT:} Position sequence $P = \{p_1, p_2, \ldots, p_n\}$
+    \item \textbf{OUTPUT:} ValidationResult $\in \{\mathtt{TRUE}, \mathtt{FALSE}, \mathtt{UNCERTAIN}\}$
+\end{itemize}
+
+\textbf{Phase 1: Preprocessing} --- Filter invalid positions; sort by timestamp.
+
+\textbf{Phase 2: Clustering} --- Build initial clusters using reachability; merge clusters via handover detection.
+
+\textbf{Phase 3: Decision} --- Analyze cluster structure; return validation result.
+
+\subsection{Preprocessing Phase}
+
+\begin{algorithm}[H]
+\caption{Position Preprocessing}
+\label{alg:preprocessing}
+\KwInput{Raw position sequence $P$}
+\KwOutput{Cleaned, sorted position sequence $P'$}
+\BlankLine
+$P' \leftarrow \emptyset$\;
+\ForEach{position $p \in P$}{
+    \If{$p.\mathit{lat}$ or $p.\mathit{lon}$ or $p.\mathit{time}$ is \texttt{NULL}}{
+        \textbf{skip}\;
+    }
+    \If{$\mathrm{isNaN}(p.\mathit{lat})$ or $\mathrm{isNaN}(p.\mathit{lon})$}{
+        \textbf{skip}\;
+    }
+    \If{$p.\mathit{lat} \notin [-90, 90]$ or $p.\mathit{lon} \notin [-180, 180]$}{
+        \textbf{skip}\;
+    }
+    Append $p$ to $P'$\;
+}
+Sort $P'$ by timestamp ascending\;
+\If{$|P'| = 0$}{
+    \Return empty list\;
+}
+\Return $P'$\;
+\end{algorithm}
+
+\textbf{Complexity:} Filtering $O(n)$, sorting $O(n \log n)$. Total: $O(n \log n)$.
+
+\subsection{Initial Clustering Phase}
+The initial clustering phase builds connected components using an online algorithm that processes positions chronologically.
+
+\begin{algorithm}[H]
+\caption{Build Initial Clusters}
+\label{alg:build_clusters}
+\KwInput{Sorted position sequence $P = \{p_1, p_2, \ldots, p_n\}$}
+\KwOutput{List of clusters $\mathcal{C} = \{C_1, C_2, \ldots, C_m\}$}
+\KwConstants{$V_{\max} = 69.4$ m/s, $\mathit{JITTER\_WIN} = 1800$ s, $\mathit{JITTER\_CNT} = 3$}
+\BlankLine
+$\mathit{clusters} \leftarrow \emptyset$\;
+\For{$i \leftarrow 1$ \KwTo $n$}{
+    $p \leftarrow P[i]$\;
+    $\mathit{assigned} \leftarrow \mathtt{FALSE}$\;
+    \For{$j \leftarrow |\mathit{clusters}|$ \KwTo $1$}{
+        $C \leftarrow \mathit{clusters}[j]$\;
+        $\mathit{recent} \leftarrow \mathrm{GetRecentPositions}(C,\; p.\mathit{time},\; \mathit{JITTER\_WIN},\; \mathit{JITTER\_CNT})$\;
+        \ForEach{$q \in \mathit{recent}$}{
+            \If{$\mathrm{IsReachable}(q, p, V_{\max})$}{
+                Append $p$ to $C$\;
+                $C.\mathit{latestTime} \leftarrow p.\mathit{time}$\;
+                $\mathit{assigned} \leftarrow \mathtt{TRUE}$\;
+                \textbf{break}\;
+            }
+        }
+        \If{$\mathit{assigned}$}{
+            \textbf{break}\;
+        }
+    }
+    \If{$\neg\,\mathit{assigned}$}{
+        Create new cluster with $\{p\}$ and append to $\mathit{clusters}$\;
+    }
+}
+\Return $\mathit{clusters}$\;
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{IsReachable}
+\label{alg:is_reachable}
+\KwInput{Positions $p_1, p_2$; maximum speed $\mathit{maxSpeed}$}
+\KwOutput{Boolean indicating physical reachability}
+\BlankLine
+$\mathit{dist} \leftarrow \mathrm{HaversineDistance}(p_1, p_2)$\;
+$\Delta t \leftarrow |p_2.\mathit{time} - p_1.\mathit{time}|$\;
+\If{$\Delta t = 0$}{
+    \Return $\mathit{dist} < 100$\;
+}
+\Return $(\mathit{dist} \;/\; \Delta t) \leq \mathit{maxSpeed}$\;
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{HaversineDistance}
+\label{alg:haversine}
+\KwInput{Positions $p_1 = (\mathit{lat}_1, \mathit{lon}_1)$, $p_2 = (\mathit{lat}_2, \mathit{lon}_2)$}
+\KwOutput{Great-circle distance in meters}
+\BlankLine
+$R \leftarrow 6{,}371{,}000$ \tcp*{Earth's radius in meters}
+Convert $\mathit{lat}_1, \mathit{lon}_1, \mathit{lat}_2, \mathit{lon}_2$ to radians\;
+$\Delta\phi \leftarrow \mathit{lat}_2 - \mathit{lat}_1$\;
+$\Delta\lambda \leftarrow \mathit{lon}_2 - \mathit{lon}_1$\;
+$a \leftarrow \sin^2(\Delta\phi / 2) + \cos(\mathit{lat}_1) \cdot \cos(\mathit{lat}_2) \cdot \sin^2(\Delta\lambda / 2)$\;
+$c \leftarrow 2 \cdot \mathrm{atan2}(\sqrt{a},\; \sqrt{1-a})$\;
+\Return $R \cdot c$\;
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{GetRecentPositions}
+\label{alg:recent_positions}
+\KwInput{Cluster $C$; current time $t_{\mathrm{cur}}$; time window $\tau$; max count $k$}
+\KwOutput{List of recent positions from $C$}
+\BlankLine
+$\mathit{result} \leftarrow \emptyset$\;
+\ForEach{$p \in C.\mathit{positions}$ in reverse chronological order}{
+    \If{$(t_{\mathrm{cur}} - p.\mathit{time}) > \tau$}{
+        \textbf{break}\;
+    }
+    Append $p$ to $\mathit{result}$\;
+    \If{$|\mathit{result}| \geq k$}{
+        \textbf{break}\;
+    }
+}
+\Return $\mathit{result}$\;
+\end{algorithm}
+
+\textbf{Complexity:} Approximately $O(n \cdot m \cdot k)$; for typical cases $O(n)$.
+
+\subsection{Handover-Based Cluster Merging}
+After initial clustering, we merge clusters that can be connected through feasible handovers.
+
+\begin{algorithm}[H]
+\caption{Merge Clusters via Handovers}
+\label{alg:merge_clusters}
+\KwInput{List of clusters $\mathcal{C}$}
+\KwOutput{Merged list of clusters}
+\KwConstants{$T_H = 28800$ s, $b = 5$, $V_{\max} = 69.4$ m/s}
+\BlankLine
+Sort $\mathcal{C}$ by earliest timestamp\;
+\Repeat{no merges occur}{
+    $\mathit{merged} \leftarrow \mathtt{FALSE}$\;
+    \For{$i \leftarrow 1$ \KwTo $|\mathcal{C}|$}{
+        \For{$j \leftarrow i+1$ \KwTo $|\mathcal{C}|$}{
+            \If{$\mathrm{CanHandover}(\mathcal{C}[i],\; \mathcal{C}[j],\; T_H,\; b,\; V_{\max})$}{
+                $\mathrm{MergeClusters}(\mathcal{C}[i],\; \mathcal{C}[j])$\;
+                Remove $\mathcal{C}[j]$\;
+                $\mathit{merged} \leftarrow \mathtt{TRUE}$\;
+                \textbf{break}\;
+            }
+        }
+        \If{$\mathit{merged}$}{
+            \textbf{break}\;
+        }
+    }
+}
+\Return $\mathcal{C}$\;
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{CanHandover}
+\label{alg:can_handover}
+\KwInput{Clusters $C_1, C_2$; time window $T_H$; boundary size $b$; max speed $V_{\max}$}
+\KwOutput{Boolean indicating feasible handover}
+\BlankLine
+$\mathit{exit} \leftarrow$ last $b$ positions of $C_1$ by timestamp\;
+$\mathit{entry} \leftarrow$ first $b$ positions of $C_2$ by timestamp\;
+\ForEach{$p_1 \in \mathit{exit}$}{
+    \ForEach{$p_2 \in \mathit{entry}$}{
+        \If{$|p_2.\mathit{time} - p_1.\mathit{time}| \leq T_H$ \textbf{and} $\mathrm{IsReachable}(p_1, p_2, V_{\max})$}{
+            \Return $\mathtt{TRUE}$\;
+        }
+    }
+}
+\Return $\mathtt{FALSE}$\;
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{MergeClusters}
+\label{alg:merge_two}
+\KwInput{Clusters $C_1, C_2$}
+\KwOutput{$C_1$ with all positions from both clusters}
+\BlankLine
+Append all positions from $C_2$ to $C_1$\;
+Sort $C_1.\mathit{positions}$ by timestamp\;
+$C_1.\mathit{earliestTime} \leftarrow \min(C_1.\mathit{earliestTime},\; C_2.\mathit{earliestTime})$\;
+$C_1.\mathit{latestTime} \leftarrow \max(C_1.\mathit{latestTime},\; C_2.\mathit{latestTime})$\;
+\end{algorithm}
+
+\textbf{Complexity:} $O(m^3 \cdot b^2)$ with $m$ clusters, $b$ boundary size; $m$ typically small.
+
+\subsection{Decision Logic}
+
+\begin{algorithm}[H]
+\caption{MakeDecision}
+\label{alg:decision}
+\KwInput{List of clusters $\mathcal{C}$; total position count $n$}
+\KwOutput{ValidationResult $\in \{\mathtt{TRUE}, \mathtt{FALSE}, \mathtt{UNCERTAIN}\}$}
+\KwConstants{$\alpha = 0.10$, $s_{\min} = 5$}
+\BlankLine
+\If{$|\mathcal{C}| = 0$}{
+    \Return $\mathtt{UNCERTAIN}$\;
+}
+\If{$|\mathcal{C}| = 1$}{
+    \Return $\mathtt{TRUE}$\;
+}
+$\mathit{threshold} \leftarrow \max(s_{\min},\; \alpha \times n)$\;
+$\mathit{significant} \leftarrow \{C \in \mathcal{C} : |C.\mathit{positions}| \geq \mathit{threshold}\}$\;
+\uIf{$|\mathit{significant}| = 0$}{
+    \Return $\mathtt{UNCERTAIN}$\;
+}
+\uElseIf{$|\mathit{significant}| = 1$}{
+    \Return $\mathtt{TRUE}$\;
+}
+\Else{
+    \Return $\mathtt{FALSE}$\;
+}
+\end{algorithm}
+
+\subsection{Complete Algorithm}
+
+\begin{algorithm}[H]
+\caption{SingleVehicleCheck --- Complete Pipeline}
+\label{alg:complete}
+\KwInput{Raw position sequence $\mathit{rawPositions}$}
+\KwOutput{Result with validation status and diagnostics}
+\BlankLine
+$\mathit{positions} \leftarrow \mathrm{PreprocessPositions}(\mathit{rawPositions})$ \tcp*{Alg.~\ref{alg:preprocessing}}
+\If{$|\mathit{positions}| = 0$}{
+    \Return Result($\mathtt{UNCERTAIN}$, ``No valid positions'')\;
+}
+\If{$|\mathit{positions}| = 1$}{
+    \Return Result($\mathtt{TRUE}$, ``Single position'')\;
+}
+$\mathit{clusters} \leftarrow \mathrm{BuildInitialClusters}(\mathit{positions})$ \tcp*{Alg.~\ref{alg:build_clusters}}
+$\mathit{clusters} \leftarrow \mathrm{MergeClustersViaHandovers}(\mathit{clusters})$ \tcp*{Alg.~\ref{alg:merge_clusters}}
+$\mathit{result} \leftarrow \mathrm{MakeDecision}(\mathit{clusters},\; |\mathit{positions}|)$ \tcp*{Alg.~\ref{alg:decision}}
+Build diagnostics: total positions, cluster count, sizes, significant count\;
+\Return Result($\mathit{result}$, diagnostics)\;
+\end{algorithm}
+
+\subsection{Correctness Analysis}
+
+\begin{lemma}
+If all positions belong to a single vehicle, the algorithm returns TRUE.
+\end{lemma}
+\textit{Proof.} A single vehicle's positions will all be mutually reachable (possibly through intermediate positions) given physical speed constraints. The initial clustering will place them in one component, or handover merging will connect any separated clusters. Thus the final result is a single cluster, and the algorithm returns TRUE.
+
+\begin{lemma}
+If two vehicles are concurrently tracking at distant locations, the algorithm returns FALSE.
+\end{lemma}
+\textit{Proof.} Positions from different vehicles at distant locations cannot satisfy the reachability predicate (impossible speeds required). They will form separate clusters. Since both have significant positions, they will be counted as significant clusters, and the algorithm returns FALSE.
+
+\begin{theorem}
+The Single Vehicle Check algorithm correctly classifies position sequences.
+\end{theorem}
+\textit{Proof.} Follows from the two lemmas above, plus the UNCERTAIN case for ambiguous situations (small clusters that could be noise or errors).
+
+\section{Complexity Analysis}
+
+\begin{table}[h]
+\centering
+\caption{Complexity summary}
+\label{tab:complexity}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Phase} & \textbf{Time} & \textbf{Space} \\
+\hline
+Preprocessing & $O(n \log n)$ & $O(n)$ \\
+Initial Clustering & $O(n \cdot m)$ & $O(n)$ \\
+Handover Merging & $O(m^3 \cdot b^2)$ & $O(m)$ \\
+Decision & $O(m)$ & $O(1)$ \\
+\hline
+\textbf{Total} & $O(n \log n + m^3 \cdot b^2)$ & $O(n)$ \\
+\hline
+\end{tabular}
+\end{table}
+
+Where $n$ = number of positions, $m$ = number of clusters (typically $m \ll n$), $b$ = boundary size (constant $= 5$). For typical data with small $m$ ($< 10$ clusters), the algorithm runs in $O(n \log n)$ time.
+
+\section{Error Handling and Edge Cases}
+
+\subsection{Input Validation}
+The algorithms include robust input validation:
+\begin{itemize}
+    \item \textbf{Null checks:} Skip positions with null coordinates or timestamps.
+    \item \textbf{Range checks:} Validate latitude $[-90, 90]$ and longitude $[-180, 180]$.
+    \item \textbf{NaN checks:} Skip positions with NaN values.
+    \item \textbf{Empty input:} Return UNCERTAIN for empty position lists.
+\end{itemize}
+
+\subsection{Edge Cases}
+
+\begin{table}[h]
+\centering
+\caption{Edge case handling}
+\label{tab:edge_cases}
+\begin{tabular}{|p{32mm}|p{42mm}|}
+\hline
+\textbf{Edge Case} & \textbf{Handling} \\
+\hline
+No positions & UNCERTAIN \\
+\hline
+Single position & TRUE \\
+\hline
+All positions invalid & UNCERTAIN \\
+\hline
+Zero time difference & Allow 100 m tolerance \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Algorithm Decision Flow}
+
+Figure~\ref{fig:decision_flow} presents the complete decision flowchart of the SingleVehicleCheck algorithm, combining all phases from preprocessing through to the final validation result.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=1cm and 1.5cm,
+    block/.style={rectangle, draw, fill=blue!8, text width=4.2cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small},
+    decision/.style={diamond, draw, fill=orange!10, text width=2cm, minimum height=0.8cm, align=center, aspect=2.2, font=\small},
+    result/.style={rectangle, draw, fill=green!15, text width=2.5cm, minimum height=0.7cm, align=center, rounded corners=3pt, font=\small\bfseries},
+    warn/.style={rectangle, draw, fill=yellow!15, text width=2.5cm, minimum height=0.7cm, align=center, rounded corners=3pt, font=\small\bfseries},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+]
+    \node[block] (pre) {Preprocess positions \\ (Alg.~\ref{alg:preprocessing})};
+    \node[decision, below=1.2cm of pre] (empty) {$|P'| = 0$?};
+    \node[warn, right=2cm of empty] (unc1) {UNCERTAIN};
+    \node[decision, below=1.2cm of empty] (single) {$|P'| = 1$?};
+    \node[result, right=2cm of single] (true1) {TRUE};
+    \node[block, below=1.2cm of single] (cluster) {Build clusters \\ (Alg.~\ref{alg:build_clusters})};
+    \node[block, below=of cluster] (merge) {Merge via handovers \\ (Alg.~\ref{alg:merge_clusters})};
+    \node[decision, below=1.2cm of merge] (count) {Significant \\ clusters?};
+    \node[warn, left=2cm of count] (unc2) {UNCERTAIN \\ {\footnotesize (count = 0)}};
+    \node[result, below left=1.2cm and 0cm of count] (true2) {TRUE \\ {\footnotesize (count = 1)}};
+    \node[result, below right=1.2cm and 0cm of count] (false) {FALSE \\ {\footnotesize (count $\geq 2$)}};
+
+    \draw[arrow] (pre) -- (empty);
+    \draw[arrow] (empty) -- node[above, font=\footnotesize] {Yes} (unc1);
+    \draw[arrow] (empty) -- node[left, font=\footnotesize] {No} (single);
+    \draw[arrow] (single) -- node[above, font=\footnotesize] {Yes} (true1);
+    \draw[arrow] (single) -- node[left, font=\footnotesize] {No} (cluster);
+    \draw[arrow] (cluster) -- (merge);
+    \draw[arrow] (merge) -- (count);
+    \draw[arrow] (count) -- node[above, font=\footnotesize] {0} (unc2);
+    \draw[arrow] (count) -| node[near start, left, font=\footnotesize] {1} (true2);
+    \draw[arrow] (count) -| node[near start, right, font=\footnotesize] {$\geq 2$} (false);
+\end{tikzpicture}
+\caption{Complete decision flow of the SingleVehicleCheck algorithm}
+\label{fig:decision_flow}
+\end{figure}
