@@ -7,6 +7,13 @@ However, the quality of this GPS data is often compromised by various technical 
 
 This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly}---a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
 
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.85\textwidth]{Shipment-tracking.png}
+\caption{A typical GPS-based shipment tracking interface showing the trail of a shipment in transit}
+\label{fig:shipment_tracking}
+\end{figure}
+
 \section{Problem: Shipment Tracked by Multiple Vehicles}
 
 \subsection{Problem Description}
@@ -30,6 +37,25 @@ When a shipment is tracked by multiple vehicles, the position history exhibits c
     \item \textbf{Oscillating Locations:} The shipment appears to ``jump'' back and forth between two or more distinct geographic areas, as positions from different vehicles interleave in the timeline.
     \item \textbf{Concurrent Distant Positions:} Multiple positions recorded at nearly the same timestamp show the shipment at vastly different locations simultaneously.
 \end{itemize}
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{multiple-vehicles-before.png}
+    \caption{Before: conflicting GPS trails from two devices assigned to the same shipment}
+    \label{fig:multi_vehicle_before}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{multiple-vehicles after.png}
+    \caption{After: trails separated and anomaly identified}
+    \label{fig:multi_vehicle_after}
+\end{subfigure}
+\caption{Multi-vehicle anomaly illustration showing simultaneous GPS trails for the same shipment ID at distant locations, demonstrating the ``impossible teleportation'' and ``oscillating locations'' symptoms}
+\label{fig:multi_vehicle_anomaly}
+\end{figure}
 
 \subsection{Legitimate Exception: Vehicle Handovers}
 Not all multi-location patterns indicate errors. Legitimate handovers occur when:
@@ -93,16 +119,16 @@ Figure~\ref{fig:system_overview} illustrates the end-to-end pipeline of the prop
     \node[block, below=of graph] (cluster) {Find Connected Components \\ {\footnotesize Initial clustering via reachability}};
     \node[block, below=of cluster] (handover) {Handover Detection \& Merging \\ {\footnotesize Merge clusters with feasible transfers}};
     \node[decision, below=1.5cm of handover] (decide) {Significant clusters $\geq 2$?};
-    \node[io, below left=1.2cm and -0.5cm of decide] (valid) {\textbf{VALID} \\ Single Vehicle};
-    \node[io, below right=1.2cm and -0.5cm of decide] (invalid) {\textbf{INVALID} \\ Multiple Vehicles};
+    \node[io, below left=1.5cm and 1.5cm of decide] (valid) {\textbf{VALID} \\ Single Vehicle};
+    \node[io, below right=1.5cm and 1.5cm of decide] (invalid) {\textbf{INVALID} \\ Multiple Vehicles};
 
     \draw[arrow] (input) -- (preprocess);
     \draw[arrow] (preprocess) -- (graph);
     \draw[arrow] (graph) -- (cluster);
     \draw[arrow] (cluster) -- (handover);
     \draw[arrow] (handover) -- (decide);
-    \draw[arrow] (decide.west) -- ++(-0.6,0) node[above, font=\footnotesize] {No} |- (valid);
-    \draw[arrow] (decide.east) -- ++(0.6,0) node[above, font=\footnotesize] {Yes} |- (invalid);
+    \draw[arrow] (decide.west) -- ++(-1.2,0) node[above, font=\footnotesize] {No} |- (valid.north);
+    \draw[arrow] (decide.east) -- ++(1.2,0) node[above, font=\footnotesize] {Yes} |- (invalid.north);
 \end{tikzpicture}
 \caption{System overview: end-to-end validation pipeline}
 \label{fig:system_overview}

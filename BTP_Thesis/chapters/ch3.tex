@@ -104,6 +104,13 @@ To handle legitimate vehicle handovers, we introduce a second-level graph.
 A cluster $C$ is a maximal set of positions that form a connected component in the Position Reachability Graph.
 \end{definition}
 
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{graph-clustering-edege-colored-segregation.png}
+\caption{Connected components in a graph, color-coded by cluster. Each component represents a group of positions that are mutually reachable, corresponding to positions from the same vehicle.}
+\label{fig:clustering_example}
+\end{figure}
+
 \begin{definition}[Cluster Boundary]
 For a cluster $C$:
 \begin{itemize}

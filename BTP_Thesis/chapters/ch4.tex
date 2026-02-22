@@ -16,6 +16,26 @@ The algorithms are designed with the following principles:
 \subsection{Algorithm Overview}
 The Single Vehicle Detection algorithm consists of three main phases:
 
+\begin{figure}[ht]
+    \centering
+    \begin{tikzpicture}[
+        phase/.style={rectangle, draw, fill=blue!8, text width=6cm, minimum height=1cm, align=center, rounded corners=5pt, font=\small\bfseries},
+        arrow/.style={-{Stealth[length=3mm]}, thick}
+    ]
+        \node[phase] (p1) {\textbf{Phase 1: Preprocessing} \\ {\footnotesize Filter invalid positions and sort by timestamp}};
+        \node[phase, below=1cm of p1] (p2) {\textbf{Phase 2: Clustering} \\ {\footnotesize Build reachability graph and merge via handovers}};
+        \node[phase, below=1cm of p2] (p3) {\textbf{Phase 3: Decision} \\ {\footnotesize Analyze significant clusters and return result}};
+        
+        \draw[arrow] (p1) -- (p2);
+        \draw[arrow] (p2) -- (p3);
+    \end{tikzpicture}
+    \caption{Three-phase pipeline of the SingleVehicleCheck algorithm}
+    \label{fig:algorithm_pipeline}
+\end{figure}
+
+\clearpage
+The phases are detailed as follows:
+
 \begin{itemize}
     \item \textbf{INPUT:} Position sequence $P = \{p_1, p_2, \ldots, p_n\}$
     \item \textbf{OUTPUT:} ValidationResult $\in \{\mathtt{TRUE}, \mathtt{FALSE}, \mathtt{UNCERTAIN}\}$
@@ -255,6 +275,89 @@ Build diagnostics: total positions, cluster count, sizes, significant count\;
 \Return Result($\mathit{result}$, diagnostics)\;
 \end{algorithm}
 
+\subsection{Worked Example: Step-by-Step Walkthrough}
+
+Figure~\ref{fig:algorithm_walkthrough} illustrates the SingleVehicleCheck algorithm applied to a concrete dataset of 6 GPS positions from 2 vehicles. We trace each position through the pipeline stages: preprocessing, clustering, graph construction, component detection, and final decision.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    block/.style={rectangle, draw, fill=blue!8, text width=11cm, minimum height=0.8cm, align=center, rounded corners=3pt, font=\small\bfseries},
+    data/.style={rectangle, draw, fill=gray!10, text width=11.5cm, align=left, rounded corners=2pt, font=\footnotesize},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick},
+    cluster1/.style={circle, draw, fill=blue!30, minimum size=0.55cm, font=\tiny\bfseries},
+    cluster2/.style={circle, draw, fill=red!30, minimum size=0.55cm, font=\tiny\bfseries},
+]
+
+% Step 1
+\node[block] (s1_title) {Step 1: Raw GPS Data (6 positions)};
+\node[data, below=0.3cm of s1_title] (s1_data) {
+$p_1$: Shanghai 31.23°N, 121.47°E, 08:00 \quad
+$p_2$: Shenzhen 22.55°N, 114.05°E, 08:15 \\
+$p_3$: Shanghai 31.24°N, 121.46°E, 09:00 \quad
+$p_4$: NaN, NaN, 09:30 {\textcolor{red}{(INVALID)}} \\
+$p_5$: Shenzhen 22.56°N, 114.06°E, 10:00 \quad
+$p_6$: Shanghai 31.25°N, 121.48°E, 10:30
+};
+\draw[arrow] (s1_data.south) -- ++(0,-0.5);
+
+% Step 2
+\node[block, below=1.1cm of s1_data] (s2_title) {Step 2: Preprocessing (Filter \& Sort)};
+\node[data, below=0.3cm of s2_title] (s2_data) {
+Removed: $p_4$ (NaN values) \quad Result: 5 valid positions \\
+Sorted by timestamp: $p_1 \to p_2 \to p_3 \to p_5 \to p_6$
+};
+\draw[arrow] (s2_data.south) -- ++(0,-0.5);
+
+% Step 3
+\node[block, below=1.1cm of s2_data] (s3_title) {Step 3: Build Reachability Graph};
+\node[data, below=0.3cm of s3_title] (s3_data) {
+Check speed feasibility using $V_{\max} = 69.4$ m/s. \\
+Shanghai cluster (Blue): $\{p_1, p_3, p_6\}$ mutually reachable. \\
+Shenzhen cluster (Red): $\{p_2, p_5\}$ reachable. No cross-cluster edges.
+};
+\draw[arrow] (s3_data.south) -- ++(0,-0.6);
+
+% Step 4
+\node[block, below=1.3cm of s3_data] (s4_title) {Step 4: Find Connected Components};
+
+\node[below=0.8cm of s4_title] (graph) {
+\begin{tikzpicture}[>=Stealth]
+    % Blue cluster
+    \node[cluster1] (p1) at (0,0) {$p_1$};
+    \node[cluster1] (p3) at (1,0) {$p_3$};
+    \node[cluster1] (p6) at (2,0) {$p_6$};
+
+    \draw[blue!60, <->] (p1) -- (p3);
+    \draw[blue!60, <->] (p3) -- (p6);
+    \draw[blue!60, <->] (p1) -- (p6);
+
+    % Red cluster
+    \node[cluster2] (p2) at (4,0) {$p_2$};
+    \node[cluster2] (p5) at (5,0) {$p_5$};
+
+    \draw[red!60, <->] (p2) -- (p5);
+\end{tikzpicture}
+};
+
+\draw[arrow] (graph.south) -- ++(0,-0.6);
+
+% Step 5
+\node[block, below=1.3cm of graph] (s5_title) {Step 5: Apply Decision Logic};
+\node[data, below=0.3cm of s5_title] {
+Total positions after preprocessing: $n = 5$ \\
+Significance threshold: $\max(5, 0.1 \times 5) = 5$ \\
+Cluster sizes: 3 (Shanghai), 2 (Shenzhen) \\
+Significant clusters = 2 $\Rightarrow$ 
+\textbf{\textcolor{red}{Result: FALSE}} \\
+Multiple vehicles detected at distant locations.
+};
+
+\end{tikzpicture}
+\caption{Step-by-step walkthrough of the SingleVehicleCheck algorithm on concrete GPS data from Shanghai and Shenzhen. The algorithm detects multiple vehicles and returns FALSE.}
+\label{fig:algorithm_walkthrough}
+\end{figure}
+
 \subsection{Correctness Analysis}
 
 \begin{lemma}
@@ -272,6 +375,7 @@ The Single Vehicle Check algorithm correctly classifies position sequences.
 \end{theorem}
 \textit{Proof.} Follows from the two lemmas above, plus the UNCERTAIN case for ambiguous situations (small clusters that could be noise or errors).
 
+\clearpage
 \section{Complexity Analysis}
 
 \begin{table}[h]
@@ -349,8 +453,8 @@ Figure~\ref{fig:decision_flow} presents the complete decision flowchart of the S
     \node[block, below=of cluster] (merge) {Merge via handovers \\ (Alg.~\ref{alg:merge_clusters})};
     \node[decision, below=1.2cm of merge] (count) {Significant \\ clusters?};
     \node[warn, left=2cm of count] (unc2) {UNCERTAIN \\ {\footnotesize (count = 0)}};
-    \node[result, below left=1.2cm and 0cm of count] (true2) {TRUE \\ {\footnotesize (count = 1)}};
-    \node[result, below right=1.2cm and 0cm of count] (false) {FALSE \\ {\footnotesize (count $\geq 2$)}};
+    \node[result, below left=1.5cm and 1.5cm of count] (true2) {TRUE \\ {\footnotesize (count = 1)}};
+    \node[result, below right=1.5cm and 1.5cm of count] (false) {FALSE \\ {\footnotesize (count $\geq 2$)}};
 
     \draw[arrow] (pre) -- (empty);
     \draw[arrow] (empty) -- node[above, font=\footnotesize] {Yes} (unc1);
@@ -359,9 +463,14 @@ Figure~\ref{fig:decision_flow} presents the complete decision flowchart of the S
     \draw[arrow] (single) -- node[left, font=\footnotesize] {No} (cluster);
     \draw[arrow] (cluster) -- (merge);
     \draw[arrow] (merge) -- (count);
+    % From count decision
     \draw[arrow] (count) -- node[above, font=\footnotesize] {0} (unc2);
-    \draw[arrow] (count) -| node[near start, left, font=\footnotesize] {1} (true2);
-    \draw[arrow] (count) -| node[near start, right, font=\footnotesize] {$\geq 2$} (false);
+
+    \draw[arrow] (count.south) -- ++(0,-0.6)
+        -| node[midway, xshift=-6pt, font=\footnotesize] {1} (true2);
+
+    \draw[arrow] (count.south) -- ++(0,-0.6)
+        -| node[midway, xshift=6pt, font=\footnotesize] {$\geq 2$} (false);
 \end{tikzpicture}
 \caption{Complete decision flow of the SingleVehicleCheck algorithm}
 \label{fig:decision_flow}
