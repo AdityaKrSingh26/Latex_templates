@@ -5,7 +5,7 @@ Modern logistics and supply chain systems rely heavily on GPS-based shipment tra
 
 However, the quality of this GPS data is often compromised by various technical and operational issues. Poor data quality leads to incorrect tracking information being displayed to customers, flawed analytics, billing errors, and degraded trust in the tracking system. Therefore, robust validation mechanisms are essential to ensure data integrity before it reaches downstream consumers.
 
-This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly}---a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
+This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly} a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
 
 \begin{figure}[ht]
 \centering
@@ -100,6 +100,7 @@ Failure to detect multi-vehicle tracking errors causes:
     \item \textbf{SLA Violations:} False delay alerts or missed actual delays due to corrupted position data.
 \end{itemize}
 
+\clear
 \section{System Overview}
 
 Figure~\ref{fig:system_overview} illustrates the end-to-end pipeline of the proposed validation framework.
