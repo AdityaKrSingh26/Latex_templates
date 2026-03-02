@@ -1,7 +1,7 @@
 \chapter{ALGORITHM DESIGN AND SOLUTION APPROACH}
 
 \section{Introduction}
-This chapter presents the detailed algorithms for solving the shipment tracking validation problem. Building on the graph formulations from Chapter 3, we develop step-by-step procedures with pseudocode, analyze their correctness, and evaluate computational complexity.
+This chapter presents the detailed algorithms for solving the shipment tracking validation problem. Building on the graph formulations from Chapter~3 and standard graph traversal techniques~\cite{cormen2022introduction}, we develop step-by-step procedures with pseudocode, analyze their correctness, and evaluate computational complexity.
 
 The algorithms are designed with the following principles:
 \begin{itemize}
@@ -14,7 +14,10 @@ The algorithms are designed with the following principles:
 \section{Single Vehicle Detection Algorithm}
 
 \subsection{Algorithm Overview}
-The Single Vehicle Detection algorithm consists of three main phases:
+
+The \textsc{SingleVehicleCheck} algorithm addresses the following decision problem: given a chronological sequence of GPS positions recorded under a single shipment identifier, determine whether the positions are consistent with tracking by a single physical vehicle, or whether they contain evidence of multiple distinct vehicles reporting simultaneously. The algorithm accepts a raw position sequence as input and produces a ternary validation result: \texttt{TRUE} (single vehicle), \texttt{FALSE} (multiple vehicles detected), or \texttt{UNCERTAIN} (insufficient data to conclude), along with diagnostic metadata describing the cluster structure.
+
+The algorithm operates as a three-phase pipeline, illustrated in Figure~\ref{fig:algorithm_pipeline}. Each phase transforms the data into a progressively higher-level representation: raw coordinates are first cleaned into a valid temporal sequence, then partitioned into spatially coherent groups, and finally evaluated against significance thresholds to yield the validation verdict.
 
 \begin{figure}[ht]
     \centering
@@ -22,30 +25,28 @@ The Single Vehicle Detection algorithm consists of three main phases:
         phase/.style={rectangle, draw, fill=blue!8, text width=6cm, minimum height=1cm, align=center, rounded corners=5pt, font=\small\bfseries},
         arrow/.style={-{Stealth[length=3mm]}, thick}
     ]
-        \node[phase] (p1) {\textbf{Phase 1: Preprocessing} \\ {\footnotesize Filter invalid positions and sort by timestamp}};
-        \node[phase, below=1cm of p1] (p2) {\textbf{Phase 2: Clustering} \\ {\footnotesize Build reachability graph and merge via handovers}};
-        \node[phase, below=1cm of p2] (p3) {\textbf{Phase 3: Decision} \\ {\footnotesize Analyze significant clusters and return result}};
-        
+        \node[phase] (p1) {\textbf{Phase 1: Preprocessing} \\ {\footnotesize Validate, filter, and sort positions}};
+        \node[phase, below=1cm of p1] (p2) {\textbf{Phase 2: Clustering} \\ {\footnotesize Build reachability clusters and merge via handovers}};
+        \node[phase, below=1cm of p2] (p3) {\textbf{Phase 3: Decision} \\ {\footnotesize Evaluate cluster significance and return result}};
+
         \draw[arrow] (p1) -- (p2);
         \draw[arrow] (p2) -- (p3);
     \end{tikzpicture}
-    \caption{Three-phase pipeline of the SingleVehicleCheck algorithm}
+    \caption{Three-phase pipeline of the \textsc{SingleVehicleCheck} algorithm}
     \label{fig:algorithm_pipeline}
 \end{figure}
 
-\clearpage
-The phases are detailed as follows:
 
 \begin{itemize}
-    \item \textbf{INPUT:} Position sequence $P = \{p_1, p_2, \ldots, p_n\}$
-    \item \textbf{OUTPUT:} ValidationResult $\in \{\mathtt{TRUE}, \mathtt{FALSE}, \mathtt{UNCERTAIN}\}$
+    \item \textbf{INPUT:} Raw position sequence $P = \{p_1, p_2, \ldots, p_n\}$, where each $p_i = (\mathit{lat}_i, \mathit{lon}_i, t_i)$
+    \item \textbf{OUTPUT:} ValidationResult $\in \{\mathtt{TRUE}, \mathtt{FALSE}, \mathtt{UNCERTAIN}\}$ with diagnostic metadata
 \end{itemize}
 
-\textbf{Phase 1: Preprocessing} --- Filter invalid positions; sort by timestamp.
+\textbf{Phase~1: Preprocessing.} The raw GPS payload is sanitised by discarding positions with null, NaN, or out-of-range coordinates (latitude $\notin [-90, 90]$, longitude $\notin [-180, 180]$), then sorted by timestamp to produce a clean sequence $P'$.
 
-\textbf{Phase 2: Clustering} --- Build initial clusters using reachability; merge clusters via handover detection.
+\textbf{Phase~2: Clustering.} The cleaned sequence $P'$ is processed by an online clustering algorithm (Algorithm~\ref{alg:build_clusters}). Each position is tested against recent members of existing clusters using the Haversine-based reachability predicate with a jitter window of $\tau = 1800$\,s; reachable positions join the cluster, otherwise a new cluster is created. A second stage (Algorithm~\ref{alg:merge_clusters}) then merges cluster pairs connected by feasible handovers (temporal gap $\leq T_H = 8$\,hours and reachability satisfied).
 
-\textbf{Phase 3: Decision} --- Analyze cluster structure; return validation result.
+\textbf{Phase~3: Decision.} The final cluster set $\mathcal{C}$ is evaluated against the significance criterion $|C| \geq \max(s_{\min},\; \alpha \cdot n)$ with $s_{\min} = 5$ and $\alpha = 0.10$ (Algorithm~\ref{alg:decision}). Zero or one significant cluster yields \texttt{TRUE}/\texttt{UNCERTAIN}; two or more yields \texttt{FALSE} (multiple vehicles detected).
 
 \subsection{Preprocessing Phase}
 
@@ -74,6 +75,7 @@ Sort $P'$ by timestamp ascending\;
 }
 \Return $P'$\;
 \end{algorithm}
+\vspace{1em}
 
 \textbf{Complexity:} Filtering $O(n)$, sorting $O(n \log n)$. Total: $O(n \log n)$.
 
@@ -112,6 +114,7 @@ $\mathit{clusters} \leftarrow \emptyset$\;
 }
 \Return $\mathit{clusters}$\;
 \end{algorithm}
+\vspace{1em}
 
 \begin{algorithm}[H]
 \caption{IsReachable}
@@ -126,6 +129,7 @@ $\Delta t \leftarrow |p_2.\mathit{time} - p_1.\mathit{time}|$\;
 }
 \Return $(\mathit{dist} \;/\; \Delta t) \leq \mathit{maxSpeed}$\;
 \end{algorithm}
+\vspace{1em}
 
 \begin{algorithm}[H]
 \caption{HaversineDistance}
@@ -141,6 +145,7 @@ $a \leftarrow \sin^2(\Delta\phi / 2) + \cos(\mathit{lat}_1) \cdot \cos(\mathit{l
 $c \leftarrow 2 \cdot \mathrm{atan2}(\sqrt{a},\; \sqrt{1-a})$\;
 \Return $R \cdot c$\;
 \end{algorithm}
+\vspace{1em}
 
 \begin{algorithm}[H]
 \caption{GetRecentPositions}
@@ -160,6 +165,7 @@ $\mathit{result} \leftarrow \emptyset$\;
 }
 \Return $\mathit{result}$\;
 \end{algorithm}
+\vspace{1em}
 
 \textbf{Complexity:} Approximately $O(n \cdot m \cdot k)$; for typical cases $O(n)$.
 
@@ -192,6 +198,7 @@ Sort $\mathcal{C}$ by earliest timestamp\;
 }
 \Return $\mathcal{C}$\;
 \end{algorithm}
+\vspace{1em}
 
 \begin{algorithm}[H]
 \caption{CanHandover}
@@ -210,6 +217,7 @@ $\mathit{entry} \leftarrow$ first $b$ positions of $C_2$ by timestamp\;
 }
 \Return $\mathtt{FALSE}$\;
 \end{algorithm}
+\vspace{1em}
 
 \begin{algorithm}[H]
 \caption{MergeClusters}
@@ -222,6 +230,7 @@ Sort $C_1.\mathit{positions}$ by timestamp\;
 $C_1.\mathit{earliestTime} \leftarrow \min(C_1.\mathit{earliestTime},\; C_2.\mathit{earliestTime})$\;
 $C_1.\mathit{latestTime} \leftarrow \max(C_1.\mathit{latestTime},\; C_2.\mathit{latestTime})$\;
 \end{algorithm}
+\vspace{1em}
 
 \textbf{Complexity:} $O(m^3 \cdot b^2)$ with $m$ clusters, $b$ boundary size; $m$ typically small.
 
@@ -252,11 +261,12 @@ $\mathit{significant} \leftarrow \{C \in \mathcal{C} : |C.\mathit{positions}| \g
     \Return $\mathtt{FALSE}$\;
 }
 \end{algorithm}
+\vspace{1em}
 
 \subsection{Complete Algorithm}
 
 \begin{algorithm}[H]
-\caption{SingleVehicleCheck --- Complete Pipeline}
+\caption{SingleVehicleCheck: Complete Pipeline}
 \label{alg:complete}
 \KwInput{Raw position sequence $\mathit{rawPositions}$}
 \KwOutput{Result with validation status and diagnostics}
@@ -274,10 +284,11 @@ $\mathit{result} \leftarrow \mathrm{MakeDecision}(\mathit{clusters},\; |\mathit{
 Build diagnostics: total positions, cluster count, sizes, significant count\;
 \Return Result($\mathit{result}$, diagnostics)\;
 \end{algorithm}
+\vspace{1em}
 
 \subsection{Worked Example: Step-by-Step Walkthrough}
 
-Figure~\ref{fig:algorithm_walkthrough} illustrates the SingleVehicleCheck algorithm applied to a concrete dataset of 6 GPS positions from 2 vehicles. We trace each position through the pipeline stages: preprocessing, clustering, graph construction, component detection, and final decision.
+Figure~\ref{fig:algorithm_walkthrough} illustrates the SingleVehicleCheck algorithm applied to a concrete dataset of 12 GPS positions from 2 vehicles. We trace each position through the pipeline stages: preprocessing, clustering, component detection, and final decision.
 
 \begin{figure}[ht]
 \centering
@@ -290,36 +301,43 @@ Figure~\ref{fig:algorithm_walkthrough} illustrates the SingleVehicleCheck algori
 ]
 
 % Step 1
-\node[block] (s1_title) {Step 1: Raw GPS Data (6 positions)};
+\node[block] (s1_title) {Step 1: Raw GPS Data (12 positions)};
 \node[data, below=0.3cm of s1_title] (s1_data) {
-$p_1$: Shanghai 31.23°N, 121.47°E, 08:00 \quad
-$p_2$: Shenzhen 22.55°N, 114.05°E, 08:15 \\
-$p_3$: Shanghai 31.24°N, 121.46°E, 09:00 \quad
+$p_1$: Shanghai 31.23$^\circ$N, 121.47$^\circ$E, 08:00 \quad
+$p_2$: Shenzhen 22.55$^\circ$N, 114.05$^\circ$E, 08:15 \\
+$p_3$: Shanghai 31.24$^\circ$N, 121.46$^\circ$E, 09:00 \quad
 $p_4$: NaN, NaN, 09:30 {\textcolor{red}{(INVALID)}} \\
-$p_5$: Shenzhen 22.56°N, 114.06°E, 10:00 \quad
-$p_6$: Shanghai 31.25°N, 121.48°E, 10:30
+$p_5$: Shenzhen 22.56$^\circ$N, 114.06$^\circ$E, 10:00 \quad
+$p_6$: Shanghai 31.25$^\circ$N, 121.48$^\circ$E, 10:30 \\
+$p_7$: Shenzhen 22.54$^\circ$N, 114.07$^\circ$E, 11:00 \quad
+$p_8$: Shanghai 31.22$^\circ$N, 121.49$^\circ$E, 11:30 \\
+$p_9$: Shenzhen 22.57$^\circ$N, 114.04$^\circ$E, 12:00 \quad
+$p_{10}$: Shanghai 31.26$^\circ$N, 121.45$^\circ$E, 12:30 \\
+$p_{11}$: NaN, NaN, 13:00 {\textcolor{red}{(INVALID)}} \quad
+$p_{12}$: Shenzhen 22.58$^\circ$N, 114.08$^\circ$E, 13:30
 };
 \draw[arrow] (s1_data.south) -- ++(0,-0.5);
 
 % Step 2
 \node[block, below=1.1cm of s1_data] (s2_title) {Step 2: Preprocessing (Filter \& Sort)};
 \node[data, below=0.3cm of s2_title] (s2_data) {
-Removed: $p_4$ (NaN values) \quad Result: 5 valid positions \\
-Sorted by timestamp: $p_1 \to p_2 \to p_3 \to p_5 \to p_6$
+Removed: $p_4$, $p_{11}$ (NaN values) \quad Result: 10 valid positions \\
+Sorted: $p_1 \to p_2 \to p_3 \to p_5 \to p_6 \to p_7 \to p_8 \to p_9 \to p_{10} \to p_{12}$
 };
 \draw[arrow] (s2_data.south) -- ++(0,-0.5);
 
 % Step 3
-\node[block, below=1.1cm of s2_data] (s3_title) {Step 3: Build Reachability Graph};
+\node[block, below=1.1cm of s2_data] (s3_title) {Step 3: Build Reachability Graph \& Find Components};
 \node[data, below=0.3cm of s3_title] (s3_data) {
-Check speed feasibility using $V_{\max} = 69.4$ m/s. \\
-Shanghai cluster (Blue): $\{p_1, p_3, p_6\}$ mutually reachable. \\
-Shenzhen cluster (Red): $\{p_2, p_5\}$ reachable. No cross-cluster edges.
+Check speed feasibility using $V_{\max} = 69.4$ m/s (250 km/h). \\
+Shanghai cluster (Blue): $\{p_1, p_3, p_6, p_8, p_{10}\}$ : 5 positions, mutually reachable. \\
+Shenzhen cluster (Red): $\{p_2, p_5, p_7, p_9, p_{12}\}$ : 5 positions, mutually reachable. \\
+No cross-cluster edges (Shanghai--Shenzhen $\approx$ 1{,}200\,km, transitions require $>$ 4{,}800\,km/h).
 };
 \draw[arrow] (s3_data.south) -- ++(0,-0.6);
 
 % Step 4
-\node[block, below=1.3cm of s3_data] (s4_title) {Step 4: Find Connected Components};
+\node[block, below=1.3cm of s3_data] (s4_title) {Step 4: Connected Components};
 
 \node[below=0.8cm of s4_title] (graph) {
 \begin{tikzpicture}[>=Stealth]
@@ -327,16 +345,25 @@ Shenzhen cluster (Red): $\{p_2, p_5\}$ reachable. No cross-cluster edges.
     \node[cluster1] (p1) at (0,0) {$p_1$};
     \node[cluster1] (p3) at (1,0) {$p_3$};
     \node[cluster1] (p6) at (2,0) {$p_6$};
+    \node[cluster1] (p8) at (3,0) {$p_8$};
+    \node[cluster1] (p10) at (4,0) {$p_{10}$};
 
-    \draw[blue!60, <->] (p1) -- (p3);
-    \draw[blue!60, <->] (p3) -- (p6);
-    \draw[blue!60, <->] (p1) -- (p6);
+    \draw[blue!60] (p1) -- (p3);
+    \draw[blue!60] (p3) -- (p6);
+    \draw[blue!60] (p6) -- (p8);
+    \draw[blue!60] (p8) -- (p10);
 
     % Red cluster
-    \node[cluster2] (p2) at (4,0) {$p_2$};
-    \node[cluster2] (p5) at (5,0) {$p_5$};
+    \node[cluster2] (p2) at (6.5,0) {$p_2$};
+    \node[cluster2] (p5) at (7.5,0) {$p_5$};
+    \node[cluster2] (p7) at (8.5,0) {$p_7$};
+    \node[cluster2] (p9) at (9.5,0) {$p_9$};
+    \node[cluster2] (p12) at (10.5,0) {$p_{12}$};
 
-    \draw[red!60, <->] (p2) -- (p5);
+    \draw[red!60] (p2) -- (p5);
+    \draw[red!60] (p5) -- (p7);
+    \draw[red!60] (p7) -- (p9);
+    \draw[red!60] (p9) -- (p12);
 \end{tikzpicture}
 };
 
@@ -345,16 +372,16 @@ Shenzhen cluster (Red): $\{p_2, p_5\}$ reachable. No cross-cluster edges.
 % Step 5
 \node[block, below=1.3cm of graph] (s5_title) {Step 5: Apply Decision Logic};
 \node[data, below=0.3cm of s5_title] {
-Total positions after preprocessing: $n = 5$ \\
-Significance threshold: $\max(5, 0.1 \times 5) = 5$ \\
-Cluster sizes: 3 (Shanghai), 2 (Shenzhen) \\
-Significant clusters = 2 $\Rightarrow$ 
+Total positions after preprocessing: $n = 10$ \\
+Significance threshold: $\max(5,\; 0.1 \times 10) = 5$ \\
+Cluster sizes: 5 (Shanghai) $\geq 5$ \checkmark, \quad 5 (Shenzhen) $\geq 5$ \checkmark \\
+Significant clusters = 2 $\Rightarrow$
 \textbf{\textcolor{red}{Result: FALSE}} \\
 Multiple vehicles detected at distant locations.
 };
 
 \end{tikzpicture}
-\caption{Step-by-step walkthrough of the SingleVehicleCheck algorithm on concrete GPS data from Shanghai and Shenzhen. The algorithm detects multiple vehicles and returns FALSE.}
+\caption{Step-by-step walkthrough of the SingleVehicleCheck algorithm on concrete GPS data from Shanghai and Shenzhen. Both clusters meet the significance threshold, confirming multiple vehicles. The algorithm returns FALSE.}
 \label{fig:algorithm_walkthrough}
 \end{figure}
 
@@ -375,7 +402,7 @@ The Single Vehicle Check algorithm correctly classifies position sequences.
 \end{theorem}
 \textit{Proof.} Follows from the two lemmas above, plus the UNCERTAIN case for ambiguous situations (small clusters that could be noise or errors).
 
-\clearpage
+% \clearpage
 \section{Complexity Analysis}
 
 \begin{table}[h]
@@ -430,6 +457,7 @@ Zero time difference & Allow 100 m tolerance \\
 \end{tabular}
 \end{table}
 
+\clearpage
 \section{Algorithm Decision Flow}
 
 Figure~\ref{fig:decision_flow} presents the complete decision flowchart of the SingleVehicleCheck algorithm, combining all phases from preprocessing through to the final validation result.
@@ -475,3 +503,6 @@ Figure~\ref{fig:decision_flow} presents the complete decision flowchart of the S
 \caption{Complete decision flow of the SingleVehicleCheck algorithm}
 \label{fig:decision_flow}
 \end{figure}
+
+\section{Summary}
+This chapter presented the complete algorithmic design for single-vehicle validation. The three-phase pipeline (preprocessing, clustering with handover merging, and significance-based decision) transforms raw GPS position data into a deterministic validation verdict. Each phase is specified in pseudocode with explicit correctness arguments and complexity bounds. The overall algorithm runs in $O(n \log n + m^3 \cdot b^2)$ time, which reduces to $O(n \log n)$ for the typical case where the number of clusters $m$ is small. The worked example demonstrated end-to-end execution on a concrete multi-vehicle dataset, confirming that the algorithm correctly identifies concurrent tracking by spatially separated devices.

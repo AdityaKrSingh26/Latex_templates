@@ -1,11 +1,15 @@
 \chapter{PROBLEM STATEMENT}
 
 \section{Introduction}
-Modern logistics and supply chain systems rely heavily on GPS-based shipment tracking to provide real-time visibility of goods in transit. Every day, millions of GPS position records are generated as shipments move across the globe through trucks, ships, trains, and aircraft. This data forms the backbone of supply chain visibility platforms, enabling businesses to track deliveries, estimate arrival times, optimize routes, and respond to disruptions.
+Modern logistics and supply chain systems rely heavily on GPS-based shipment tracking to provide real-time visibility of goods in transit. The global Real-Time Transportation Visibility Platform (RTTVP) market, valued at approximately USD~3.2 billion in 2024~\cite{dataintelo2024rttvp}, underscores the scale of this dependence: leading platforms process billions of data points daily across millions of active shipments~\cite{project44_2025gartner, fourkites2024genai}. This data forms the backbone of supply chain visibility, enabling businesses to track deliveries, estimate arrival times, optimize routes, and respond to disruptions.
 
-However, the quality of this GPS data is often compromised by various technical and operational issues. Poor data quality leads to incorrect tracking information being displayed to customers, flawed analytics, billing errors, and degraded trust in the tracking system. Therefore, robust validation mechanisms are essential to ensure data integrity before it reaches downstream consumers.
+However, the quality of this GPS data is frequently compromised. Data quality in shipment tracking is inherently multidimensional~\cite{wang1996beyond, iso19157, ariza2021geospatial}: it spans positional accuracy (how closely reported coordinates match true locations), completeness (whether all expected pings are received), logical consistency (whether successive positions form a physically plausible trajectory), timeliness (whether data arrives within acceptable latency), and format validity (whether coordinates and timestamps conform to expected ranges and conventions). In real-world IoT deployments, these dimensions degrade due to GNSS signal obstruction, hardware faults, transmission latency, and data integration inconsistencies~\cite{kuras2024assessment}.
 
-This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly} a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
+The root causes of degraded quality span both hardware and integration layers. On the hardware side, signal multipath in urban canyons, cold-start satellite acquisition delays, firmware bugs, and antenna degradation all introduce positional errors or reporting gaps~\cite{peretic2025multipath, hubbard2010hotstart, oloyede2024reliability}. A particularly insidious class of errors arises from coordinate system mismatches: the standard geographic convention (ISO~6709) represents a point as (latitude, longitude), whereas GeoJSON (RFC~7946) uses (longitude, latitude)~\cite{macwright2015geojson}. When data flows between systems without proper transformation, coordinates are silently swapped, placing vehicles at entirely incorrect locations. On the integration side, incorrect device-to-shipment assignment, shipment ID collisions when merging feeds from multiple carriers~\cite{xia2016deduplication}, and system migration artifacts all corrupt data at the platform level. These failure modes map directly to the error scenarios described in Section~\ref{sec:problem}.
+
+Consider a realistic scenario illustrating how these issues compound. A refrigerated pharmaceutical shipment travelling across Europe experiences a tunnel-induced reporting gap, while a recent system migration introduces a coordinate swap for a subset of positions. The tracking platform, receiving this degraded data, triggers a false delay alert; the customer authorises an unnecessary backup shipment. Meanwhile, the swapped coordinates produce an anomalous teleportation event that corrupts the carrier's delivery metrics. Industry research estimates that poor data quality costs organisations millions annually~\cite{gartner2021dataquality}, highlighting the need for robust, multi-dimensional validation.
+
+This project focuses on one of the critical data quality problems encountered in production shipment tracking systems: \textbf{Multi-Vehicle Tracking Anomaly}, a single shipment being incorrectly tracked by multiple vehicles simultaneously. We propose a unified graph-theoretic framework to model, detect, and resolve these anomalies.
 
 \begin{figure}[ht]
 \centering
@@ -15,39 +19,154 @@ This project focuses on one of the critical data quality problems encountered in
 \end{figure}
 
 \section{Problem: Shipment Tracked by Multiple Vehicles}
+\label{sec:problem}
 
 \subsection{Problem Description}
 In a correctly functioning tracking system, a shipment (such as a container, parcel, or pallet) should be associated with exactly one tracking device at any given time. The GPS positions reported for that shipment should represent the movement of a single physical vehicle carrying the goods.
 
-However, in real-world systems, the following erroneous scenarios occur:
+When two or more GPS devices are erroneously associated with the same shipment ID, each device independently reports the position of the vehicle it is physically mounted on. Because these vehicles are travelling along different routes in different locations, the tracking platform receives two streams of coordinates that it merges into a single timeline under one shipment record. The result is a position history that no single physical object could have produced: the shipment appears to exist in two places at once, or to jump between distant locations faster than any vehicle could travel. The platform has no inherent way to know that the data originates from separate hardware sources; it simply timestamps and stores every incoming GPS ping against the shipment ID it was tagged with.
 
-\textbf{Scenario A: Device Misconfiguration.} Multiple GPS tracking devices are incorrectly assigned to the same shipment ID in the system database. As a result, positions from two or more devices (potentially on different vehicles in different locations) are all recorded under one shipment.
+The following erroneous scenarios describe how this dual-device (or multi-device) binding occurs in practice:
 
-\textbf{Scenario B: Data Integration Errors.} When integrating data from multiple carrier partners or legacy systems, shipment IDs may collide or be incorrectly mapped. Two distinct shipments from different sources get merged into a single shipment record.
+\textbf{Scenario A: Device Misconfiguration.}
+Each GPS tracking device is bound to a shipment via a mapping record in the platform's configuration database. Misconfiguration occurs when this mapping is incorrectly established, causing multiple devices to reference the same shipment simultaneously~\cite{nmfta2023provisioning, 1ot2024connectivity}. Common causes include a dispatcher entering the wrong shipment ID, bulk-upload spreadsheets with duplicated references, or a device-swap procedure where the original tracker is not deregistered~\cite{samsara2023devicehealth}.
+
+For example, two trucks on different routes (Munich to Hamburg and Berlin to Frankfurt) are both assigned to \texttt{SHIP-12345}. The dashboard displays interleaved pings 250\,km apart within seconds, producing an implied velocity of over 300{,}000\,km/h. Figure~\ref{fig:scenario_a} illustrates the database-level error.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 1.5cm,
+    dbrow/.style={rectangle, draw, fill=blue!8, text width=3.8cm, minimum height=0.7cm, align=center, font=\small, rounded corners=2pt},
+    shipbox/.style={rectangle, draw, fill=orange!15, text width=3.2cm, minimum height=0.7cm, align=center, font=\small\bfseries, rounded corners=2pt},
+    arrow/.style={-{Stealth[length=2mm]}, thick},
+    label/.style={font=\footnotesize\itshape, text=gray}
+]
+    \node[label] at (0, 2.8) {Configuration Database};
+    \node[dbrow] (d1) at (0, 2) {Device D1 (IMEI: ...4471)};
+    \node[dbrow, below=of d1] (d2) {Device D2 (IMEI: ...8832)};
+    \node[shipbox, right=2.5cm of d1, yshift=-0.8cm] (ship) {SHIP-12345};
+    \draw[arrow, color=red!70] (d1.east) -- (ship.west) node[midway, above, font=\footnotesize] {assigned};
+    \draw[arrow, color=red!70] (d2.east) -- (ship.west) node[midway, below, font=\footnotesize] {assigned};
+    \node[label, text=red!70, text width=3.5cm, align=center] at (2.2, -0.5) {Both devices bound to the same shipment ID};
+\end{tikzpicture}
+\caption{Scenario~A: Two GPS devices incorrectly assigned to the same shipment ID in the configuration database}
+\label{fig:scenario_a}
+\end{figure}
+
+\textbf{Scenario B: Data Integration Errors.}
+When integrating data from multiple carrier partners or legacy systems, shipment IDs may collide or be incorrectly mapped, causing two distinct shipments to merge into one record~\cite{project44_2021dataquality, ecosio2025edierrors}. Root causes include the absence of carrier-scoped namespaces (e.g., both Carrier~A and Carrier~B independently assign shipment number \texttt{1001}), collision-prone ID hashing, or legacy EDI interfaces that transmit fixed-width codes without a carrier prefix~\cite{datadocks2024edi}. The merged record overlays two unrelated trajectories, corrupting mileage-based billing and making SLA adjudication impossible.
 
 \textbf{Scenario C: Duplicate Device Transmissions.} A malfunctioning device or network issue causes duplicate position records to be created, sometimes with slightly different coordinates or timestamps.
 
 \textbf{Scenario D: System Migration Issues.} During system migrations or updates, historical data from old tracking devices may get incorrectly linked with new device data for the same shipment ID.
 
+\textbf{Impact of above Scenarios:} When duplicate transmissions occur, the position history gains spurious entries that can scatter across the timeline. If the duplicates carry slightly perturbed coordinates (due to jitter introduced during re-transmission or buffering), the reachability analysis encounters pairs of positions that appear to originate from two distinct spatial locations at nearly the same instant. This artificially splits what should be a single connected component into two or more fragments, causing the algorithm to flag a legitimate single-vehicle journey as a multi-vehicle anomaly. Even when coordinates are identical, duplicate timestamps corrupt implied-speed calculations, inflate the total position count used for significance thresholds, and undermine jitter-window deduplication logic. In high-frequency tracking deployments, a single faulty network hop can inject hundreds of duplicate pings within minutes, overwhelming the noise-tolerance mechanisms designed for isolated GPS outliers.
+
 \subsection{Observable Symptoms}
 When a shipment is tracked by multiple vehicles, the position history exhibits characteristic patterns:
 
 \begin{itemize}
-    \item \textbf{Impossible Teleportation:} Consecutive positions show the shipment at locations that are physically impossible to reach in the elapsed time. For example, a position in Shanghai at 10:00 AM followed by a position in Shenzhen (1,200 km away) at 10:05 AM would require traveling at 14,400 km/h.
-    \item \textbf{Oscillating Locations:} The shipment appears to ``jump'' back and forth between two or more distinct geographic areas, as positions from different vehicles interleave in the timeline.
-    \item \textbf{Concurrent Distant Positions:} Multiple positions recorded at nearly the same timestamp show the shipment at vastly different locations simultaneously.
+    \item \textbf{Impossible Teleportation:} Consecutive positions show the shipment at locations that are physically impossible to reach in the elapsed time. For example, a position in Shanghai at 10:00 AM followed by Shenzhen (1,200~km away) at 10:05 AM implies 14{,}400~km/h. Detection relies on computing the implied velocity $V_{\text{implied}} = d(p_i, p_{i+1}) / (t_{i+1} - t_i)$ and comparing it against feasibility thresholds~\cite{yuan2020toddt, chen2024unitraj, li2009temporal}.
+    \item \textbf{Oscillating Locations:} The shipment appears to ``jump'' back and forth between two or more distinct geographic areas, as positions from different vehicles interleave in the timeline, analogous to the ``ping-pong handover'' effect in cellular networks~\cite{zahedi2017pingpong, garcia2025trucks}.
+    \item \textbf{Concurrent Distant Positions:} Multiple positions recorded at nearly the same timestamp show the shipment at vastly different locations simultaneously, proving that the data originates from at least two physical devices~\cite{wang2024courier, dai2022realte}.
 \end{itemize}
+
+Algorithmically, these symptoms can be resolved through spatiotemporal density clustering~\cite{gong2014tdbscan} and graph-based trajectory modelling~\cite{lamichhane2024getad}.
+
+Figures~\ref{fig:symptom_teleport} and~\ref{fig:symptom_oscillate} visualise two of these symptoms as position-versus-time diagrams, contrasting the anomalous pattern with the expected single-vehicle trajectory.
+
+% ── Symptom 1: Impossible Teleportation ──
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    point/.style={circle, fill=#1, inner sep=2pt},
+    point/.default={black},
+    arrow/.style={-{Stealth[length=2mm]}, thick},
+    dasharrow/.style={-{Stealth[length=2mm]}, thick, dashed, red!70},
+]
+    % Axes
+    \draw[arrow] (0,0) -- (10,0) node[right] {\footnotesize Time};
+    \draw[arrow] (0,0) -- (0,5) node[above] {\footnotesize Position};
+
+    % Normal trajectory (gray, expected)
+    \draw[thick, gray!40] (1,1) -- (2,1.5) -- (3,2) -- (4,2.5) -- (5,3) -- (6,3.3) -- (7,3.5);
+    \node[gray!60, font=\footnotesize] at (7.8,3.5) {Expected};
+
+    % Anomalous trajectory
+    \node[point=blue] (p1) at (1,1) {};
+    \node[point=blue] (p2) at (2,1.5) {};
+    \node[point=blue] (p3) at (3,2) {};
+    \node[point=red]  (p4) at (4,4.3) {};  % teleport!
+    \node[point=blue] (p5) at (5,2.8) {};
+    \node[point=blue] (p6) at (6,3.3) {};
+
+    \draw[thick, blue] (p1) -- (p2) -- (p3);
+    \draw[dasharrow] (p3) -- (p4) node[midway, right, font=\footnotesize, text=red!70] {1{,}200\,km in 5\,min};
+    \draw[dasharrow] (p4) -- (p5);
+    \draw[thick, blue] (p5) -- (p6);
+
+    % Labels
+    \node[font=\scriptsize, below] at (3,0) {10:00};
+    \node[font=\scriptsize, below] at (4,0) {10:05};
+    \node[font=\scriptsize, left, blue] at (3,2) {Shanghai};
+    \node[font=\scriptsize, right, red] at (4,4.3) {Shenzhen};
+\end{tikzpicture}
+\caption{Impossible Teleportation: a sudden, physically unreachable jump in the position timeline caused by an interleaved ping from a second device at a distant location}
+\label{fig:symptom_teleport}
+\end{figure}
+
+% ── Symptom 2: Oscillating Locations ──
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    point/.style={circle, fill=#1, inner sep=2pt},
+    point/.default={black},
+    arrow/.style={-{Stealth[length=2mm]}, thick},
+]
+    % Axes
+    \draw[arrow] (0,0) -- (10,0) node[right] {\footnotesize Time};
+    \draw[arrow] (0,0) -- (0,5) node[above] {\footnotesize Position};
+
+    % Region bands
+    \fill[blue!8] (0.5,0.5) rectangle (9,2.2);
+    \fill[orange!8] (0.5,3.0) rectangle (9,4.7);
+    \node[font=\scriptsize, blue!60] at (0.3,1.35) [rotate=90] {Region A};
+    \node[font=\scriptsize, orange!60] at (0.3,3.85) [rotate=90] {Region B};
+
+    % Oscillating points
+    \node[point=blue]   (a1) at (1, 1.0) {};
+    \node[point=orange]  (b1) at (2, 4.0) {};
+    \node[point=blue]   (a2) at (3, 1.4) {};
+    \node[point=orange]  (b2) at (4, 3.8) {};
+    \node[point=blue]   (a3) at (5, 1.8) {};
+    \node[point=orange]  (b3) at (6, 4.2) {};
+    \node[point=blue]   (a4) at (7, 2.0) {};
+    \node[point=orange]  (b4) at (8, 3.6) {};
+
+    \draw[thick, gray] (a1) -- (b1) -- (a2) -- (b2) -- (a3) -- (b3) -- (a4) -- (b4);
+
+    % Device labels
+    \node[font=\scriptsize, blue, right] at (7,2.0) {Device D1};
+    \node[font=\scriptsize, orange, right] at (8,3.6) {Device D2};
+\end{tikzpicture}
+\caption{Oscillating Locations: the recorded trajectory alternates between two distant geographic regions as pings from two devices (D1 and D2) interleave chronologically under the same shipment ID}
+\label{fig:symptom_oscillate}
+\end{figure}
+
 
 \begin{figure}[ht]
 \centering
-\begin{subfigure}[b]{0.48\textwidth}
+\begin{subfigure}[b]{\textwidth}
     \centering
     \includegraphics[width=\textwidth]{multiple-vehicles-before.png}
     \caption{Before: conflicting GPS trails from two devices assigned to the same shipment}
     \label{fig:multi_vehicle_before}
 \end{subfigure}
-\hfill
-\begin{subfigure}[b]{0.48\textwidth}
+
+\vspace{0.5cm}
+
+\begin{subfigure}[b]{\textwidth}
     \centering
     \includegraphics[width=\textwidth]{multiple-vehicles after.png}
     \caption{After: trails separated and anomaly identified}
@@ -58,49 +177,58 @@ When a shipment is tracked by multiple vehicles, the position history exhibits c
 \end{figure}
 
 \subsection{Legitimate Exception: Vehicle Handovers}
-Not all multi-location patterns indicate errors. Legitimate handovers occur when:
-\begin{itemize}
-    \item A truck delivers a container to a port, and a ship picks it up.
-    \item An inter-modal transfer happens at a logistics hub.
-    \item A relay system where one truck hands off to another at designated points.
-\end{itemize}
-In these cases, there is a feasible transition: the shipment physically moves from one vehicle to another at a common location within a reasonable time window.
+Not all multi-location patterns indicate errors. A shipment may genuinely span two distant locations in rapid succession when it physically transfers between vehicles, such as a truck handing off to a ship at a port, a long-haul truck transferring to a local van at a logistics hub, or a relay swap at a highway point. The distinguishing characteristic is \textit{spatial and temporal feasibility}: the two position clusters share a common meeting point, and the time gap between the last ping of Vehicle~1 and the first ping of Vehicle~2 is physically reasonable~\cite{dabiri2018cnn, erdelic2020segmentation}. In contrast, an erroneous multi-location pattern exhibits no such bridging point; positions jump between distant areas with no feasible intermediate transition.
 
 \subsection{The Validation Challenge}
 The system must distinguish between the cases shown in Table~\ref{tab:validation_challenge}.
 
 \begin{table}[h]
 \centering
-\caption{Validation challenge: patterns and expected results}
+\caption{Validation challenge: distinguishing legitimate tracking patterns from anomalies. Each row describes an observable pattern in the shipment's position history, the most likely root cause, a concrete example, and the expected validation outcome.}
 \label{tab:validation_challenge}
-\begin{tabular}{|p{45mm}|p{35mm}|p{40mm}|}
+\begin{tabular}{|p{30mm}|p{28mm}|p{48mm}|p{22mm}|}
 \hline
-\textbf{Pattern} & \textbf{Cause} & \textbf{Expected Result} \\
+\textbf{Observable Pattern} & \textbf{Likely Cause} & \textbf{Example} & \textbf{Expected Result} \\
 \hline
-All positions reachable in sequence & Single vehicle, normal tracking & VALID \\
+All positions reachable in sequence at plausible speeds &
+Single vehicle, normal tracking &
+Truck moves Mumbai $\rightarrow$ Pune at 80\,km/h; every consecutive pair of pings is reachable within the elapsed time &
+VALID \\
 \hline
-Position gaps with feasible handover & Legitimate vehicle transfer & VALID \\
+Position gap followed by resumption at a common location &
+Legitimate vehicle handover &
+Last ping from Truck~A at a port at 09:00; first ping from Ship~B at the same port at 11:00; the 2-hour gap is consistent with a loading operation &
+VALID \\
 \hline
-Concurrent positions at distant locations & Multi-device error & INVALID \\
+Positions at two distant locations at the same timestamp &
+Multi-device error (Scenario~A or~B) &
+Ping in Shanghai and ping in Shenzhen (1{,}200\,km apart) both stamped 10:00 AM, physically impossible for one shipment &
+INVALID \\
 \hline
-Oscillating positions between two areas & Data integration error & INVALID \\
+Positions alternating between two distant regions over time &
+Data integration error or device misconfiguration &
+Shipment oscillates between the Munich--Hamburg corridor and the Berlin--Frankfurt corridor every few minutes as two devices interleave &
+INVALID \\
 \hline
-Few unreachable positions among many valid ones & GPS glitches or outliers & VALID (with tolerance) \\
+A small number of unreachable positions among many consistent ones &
+GPS jitter, momentary multipath, or brief signal anomaly &
+99 of 100 pings form a smooth highway trajectory; one ping places the truck 500\,m off-road due to urban-canyon multipath &
+VALID (with tolerance) \\
 \hline
 \end{tabular}
 \end{table}
 
 \subsection{Business Impact}
-Failure to detect multi-vehicle tracking errors causes:
+Failure to detect multi-vehicle tracking errors carries severe financial consequences. The American Transportation Research Institute reports that the U.S.\ for-hire trucking industry lost 135.9~million hours and \$11.5~billion in revenue to detention in 2023 alone~\cite{atri2024detention}, while nine major ocean carriers collected \$12.9~billion in demurrage and detention fees between 2020 and 2023~\cite{descartes2024demurrage}. Minor tracking delays cascade into production stoppages, SLA penalties, and costly contingency measures such as expedited air freight~\cite{intermodal2024delay}. Specific consequences include:
 \begin{itemize}
     \item \textbf{Customer Confusion:} Tracking pages show shipments jumping between locations erratically.
-    \item \textbf{Incorrect ETAs:} Arrival time predictions become meaningless when location data is inconsistent.
-    \item \textbf{Billing Disputes:} Mileage-based billing calculations are corrupted by phantom movements.
-    \item \textbf{Operational Blindness:} Supply chain managers cannot trust the tracking data for decision-making.
-    \item \textbf{SLA Violations:} False delay alerts or missed actual delays due to corrupted position data.
+    \item \textbf{Incorrect ETAs:} Arrival time predictions become meaningless when location data is inconsistent, triggering premature or delayed dock-door scheduling and labour allocation.
+    \item \textbf{Billing Disputes:} Mileage-based billing calculations are corrupted by phantom movements; industry data indicates that while 75\% of detention hours are invoiced, only 55\% are ultimately paid, leaving billions locked in dispute resolution~\cite{atri2024detention}.
+    \item \textbf{Operational Blindness:} Supply chain managers cannot trust the tracking data for decision-making, forcing reactive ``Where Is My Order'' firefighting.
+    \item \textbf{SLA Violations:} False delay alerts or missed actual delays due to corrupted position data, leading to unnecessary backup shipments and expedited freight premiums.
 \end{itemize}
 
-\clear
+\clearpage
 \section{System Overview}
 
 Figure~\ref{fig:system_overview} illustrates the end-to-end pipeline of the proposed validation framework.
@@ -134,3 +262,17 @@ Figure~\ref{fig:system_overview} illustrates the end-to-end pipeline of the prop
 \caption{System overview: end-to-end validation pipeline}
 \label{fig:system_overview}
 \end{figure}
+
+The pipeline operates as follows:
+
+\begin{enumerate}
+    \item \textbf{Preprocessing.} The raw GPS position stream is cleaned and sorted chronologically. Invalid records (such as positions with out-of-range coordinates, null timestamps, or duplicate entries) are discarded. The output is an ordered position sequence $P = \{p_1, p_2, \ldots, p_n\}$ with $t_1 \leq t_2 \leq \cdots \leq t_n$, ready for graph construction.
+
+    \item \textbf{Build Position Reachability Graph.} Each position becomes a node, and a directed edge is added between two consecutive positions whenever the Haversine distance between them does not exceed $V_{\max} \times \Delta t$ (i.e., the movement is physically feasible at the maximum allowed speed). The resulting graph encodes all feasible single-vehicle transitions.
+
+    \item \textbf{Find Connected Components.} The reachability graph is partitioned into connected components using an online clustering algorithm. Each component groups positions that are mutually reachable through a chain of feasible movements, representing a candidate single-vehicle trajectory. Multiple components indicate that some positions cannot be connected by any physically plausible path.
+
+    \item \textbf{Handover Detection \& Merging.} Not all distinct components imply separate vehicles; a shipment may legitimately transfer between vehicles (e.g., at a warehouse or cross-dock). The algorithm tests whether the boundary positions of two clusters (last $k$ positions of one, first $k$ of the next) are spatially and temporally close enough to represent a physical handover. Clusters connected by valid handovers are merged into a single super-cluster.
+
+    \item \textbf{Decision: Significant Clusters $\geq 2$?} After merging, small residual clusters caused by GPS jitter or isolated outlier positions are filtered out using a significance threshold. If two or more clusters of substantial size remain, the shipment is confirmed to have been tracked by multiple vehicles simultaneously, and the result is \textbf{INVALID}. If only one significant cluster remains (possibly formed by merging several handover-connected components), the tracking data is consistent with a single vehicle and the result is \textbf{VALID}.
+\end{enumerate}

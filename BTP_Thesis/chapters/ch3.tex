@@ -3,7 +3,7 @@
 \section{Introduction}
 This chapter presents the formal graph-theoretic models for our shipment tracking validation problems. We transform raw GPS position data into structured graph representations that capture the essential relationships between data points. This abstraction enables us to leverage well-established graph algorithms and provides mathematical rigor to our validation approach.
 
-The key insight is that the problems can be viewed through the lens of connectivity: Are all positions connected through feasible physical movements?
+The key insight is that the problems can be viewed through the lens of connectivity: Are all positions connected through feasible physical movements? The graph algorithms we rely on, namely online single-pass clustering for connected component discovery and iterative pairwise union for cluster merging, build on well-established foundations in the algorithmic literature~\cite{cormen2022introduction}.
 
 \section{Position Reachability Graph}
 
@@ -159,17 +159,25 @@ If two components $C_1$ and $C_2$ can be merged via a valid handover, the merged
 \centering
 \caption{Mapping our problem to standard graph problems}
 \label{tab:graph_mapping}
-\begin{tabular}{|p{45mm}|p{50mm}|}
+\begin{tabular}{|p{28mm}|p{30mm}|p{68mm}|}
 \hline
-\textbf{Our Problem} & \textbf{Standard Graph Problem} \\
+\textbf{Our Problem} & \textbf{Standard Graph Problem} & \textbf{How We Apply It} \\
 \hline
-Initial clustering & Connected component finding \\
+Initial clustering &
+Connected component finding &
+Each GPS position is a node in the Position Reachability Graph~$G$. An edge $(p_i, p_j)$ exists iff $\mathrm{reachable}(p_i, p_j)$ holds. Our online clustering algorithm (Algorithm~\ref{alg:build_clusters}) processes positions chronologically and assigns each to the first existing cluster whose recent positions satisfy the reachability predicate; if none match, a new cluster is created. The resulting clusters are equivalent to the connected components of~$G$. \\
 \hline
-Cluster merging & Transitive closure \\
+Cluster merging &
+Iterative pairwise union &
+The Handover Graph $H = (\mathcal{C}, E_H)$ treats clusters as nodes. Algorithm~\ref{alg:merge_clusters} iterates over all cluster pairs, tests the handover predicate via \textsc{CanHandover} (Algorithm~\ref{alg:can_handover}), and merges any connected pair. The loop repeats until no further merges occur, effectively computing the connected components of~$H$ and collapsing each into a single super-cluster. \\
 \hline
-Significant cluster detection & Component size analysis \\
+Significant cluster detection &
+Component size thresholding &
+After merging, each remaining cluster is tested against the significance criterion: $|C| \geq \max(s_{\min},\; \alpha \cdot n)$ (Algorithm~\ref{alg:decision}). Clusters below this threshold are classified as GPS jitter or outlier noise and discarded. If two or more clusters exceed the threshold, the algorithm returns \texttt{FALSE} (multiple vehicles detected). \\
 \hline
-Handover detection & Bridge edge identification \\
+Handover detection &
+Boundary reachability testing &
+For each cluster pair $(C_1, C_2)$, Algorithm~\ref{alg:can_handover} extracts the last~$k$ positions of $C_1$ ($\mathrm{last}_k$) and the first~$k$ positions of $C_2$ ($\mathrm{first}_k$). It tests whether any exit--entry pair satisfies both the time constraint ($|t_j - t_i| \leq T_H$) and the reachability predicate. A match indicates a feasible physical transfer: the shipment changed vehicles at a common location within a plausible time window. \\
 \hline
 \end{tabular}
 \end{table}

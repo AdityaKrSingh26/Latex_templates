@@ -1,6 +1,7 @@
 \chapter{GRAPH THEORY BACKGROUND}
 
 \section{Graph Theory Fundamentals}
+The definitions and algorithmic foundations in this chapter follow the standard treatment in Cormen et~al.~\cite{cormen2022introduction}.
 
 \subsection{Basic Definitions}
 
@@ -143,33 +144,45 @@ For weighted graphs, $A[i][j]$ contains the edge weight instead of 1.
 
 \textbf{Coordinate Conventions.}
 \begin{itemize}
-    \item Standard: (latitude, longitude)---used by most mapping applications.
-    \item GeoJSON: (longitude, latitude)---used in GeoJSON format and some APIs.
+    \item Standard: (latitude, longitude), used by most mapping applications.
+    \item GeoJSON: (longitude, latitude), used in GeoJSON format and some APIs.
 \end{itemize}
 This inconsistency is a root cause of coordinate swap errors.
 
 \subsection{Distance Calculations}
 
-\textbf{Haversine Formula.} Calculates the great-circle distance between two points on a sphere given their latitudes and longitudes:
+The central question in our anomaly detection framework is deceptively simple: \textit{could a truck have physically travelled from GPS ping~$p_1$ to the next ping~$p_2$ in the time that elapsed between them?} Answering this requires computing the geographic distance between two coordinate pairs reported by the tracking device. Because the Earth is approximately spherical, the shortest path between two surface points is not a straight line through the interior but an arc along the surface, known as a \textit{great circle}. The Haversine formula computes the length of this arc.
+
+\textbf{Analogy.} Imagine stretching a taut string between two pins on a globe: the string follows the surface curvature, and its length is the great-circle distance, the minimum distance a vehicle must cover between the two locations. The Haversine formula computes this arc length.
+
+\textbf{Haversine Formula.} Given two GPS positions $p_1 = (\phi_1, \lambda_1)$ and $p_2 = (\phi_2, \lambda_2)$ in radians, the great-circle distance is computed as follows. Let $R = 6{,}371$\,km denote the mean Earth radius:
 \[
-\text{haversine}(p_1, p_2): \quad R = 6371 \text{ km (Earth's radius)}
+\Delta\phi = \phi_2 - \phi_1, \qquad \Delta\lambda = \lambda_2 - \lambda_1
 \]
 \[
-\Delta\phi = p_2.\text{lat} - p_1.\text{lat}, \quad \Delta\lambda = p_2.\text{lon} - p_1.\text{lon}
+a = \sin^2\!\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_1) \cdot \cos(\phi_2) \cdot \sin^2\!\left(\frac{\Delta\lambda}{2}\right)
 \]
 \[
-a = \sin^2(\Delta\phi/2) + \cos(p_1.\text{lat}) \cdot \cos(p_2.\text{lat}) \cdot \sin^2(\Delta\lambda/2)
-\]
-\[
-c = 2 \cdot \arcsin(\sqrt{a}), \quad \text{distance} = R \cdot c
+c = 2 \cdot \arcsin\!\left(\sqrt{a}\right), \qquad d = R \cdot c
 \]
 
-Accuracy: Assumes spherical Earth; error less than 0.3\% compared to ellipsoidal calculations.
+Here $\Delta\phi$ and $\Delta\lambda$ capture the north--south and east--west angular separations. The term $a$ combines these while correcting for meridian convergence near the poles via $\cos(\phi)$: a 1° longitude difference spans $\approx$\,111\,km at the equator but only $\approx$\,28\,km near the Arctic. The arc $c$ converts the angular separation to a fraction of the Earth's circumference, yielding surface distance $d$.
 
-\textbf{Vincenty Formula.} More accurate distance calculation using ellipsoidal Earth model. Computationally more expensive but provides millimeter accuracy. For our application, Haversine provides sufficient accuracy with better performance.
+\textbf{Worked example.} A shipment reports two consecutive pings:
+\begin{itemize}
+    \item $p_1$: Mumbai $(19.076{^\circ}\text{N},\; 72.878{^\circ}\text{E})$ at 10:00\,AM
+    \item $p_2$: Pune $(18.520{^\circ}\text{N},\; 73.856{^\circ}\text{E})$ at 12:30\,PM
+\end{itemize}
+Applying the Haversine formula yields $d \approx 149$\,km. The elapsed time is 2.5\,hours, giving an implied speed of $149 / 2.5 = 59.6$\,km/h, well below our 250\,km/h threshold. The reachability predicate returns \texttt{TRUE}: this pair of pings is consistent with a single truck travelling on the Mumbai--Pune Expressway.
+
+Now consider a conflicting ping from a second device: $p_2'$: Chennai $(13.083{^\circ}\text{N},\; 80.270{^\circ}\text{E})$ at 10:15\,AM. The Haversine distance from Mumbai to Chennai is $\approx$\,1{,}028\,km, and the elapsed time is just 15~minutes (0.25\,h). The implied speed is $1{,}028 / 0.25 = 4{,}112$\,km/h, clearly impossible for any ground vehicle. The reachability predicate returns \texttt{FALSE}, and this ping becomes a candidate for the multi-vehicle anomaly described in Chapter~1.
+
+\textbf{Accuracy.} The Haversine formula assumes a perfectly spherical Earth. The resulting error is less than 0.3\% compared to ellipsoidal calculations, increasing to approximately 0.55\% for trans-equatorial distances.
+
+\textbf{Vincenty Formula.} Vincenty~\cite{vincenty1975direct} developed a more accurate distance calculation using an ellipsoidal Earth model (WGS-84), achieving accuracy to within 0.5\,mm. It is computationally more expensive due to its iterative nature. For our application, the Haversine formula provides sufficient accuracy with better performance, as positional errors from GPS hardware (3--10\,m under open sky~\cite{kuras2024assessment}) far exceed the sub-metre discrepancy between the two formulae.
 
 \subsection{Speed Constraints and Reachability}
-We use 250 km/h (69.4 m/s) as a conservative upper bound for ground transport, allowing margin for GPS timestamp inaccuracies and brief high-speed segments.
+We use 250\,km/h (69.4\,m/s) as a conservative upper bound for ground transport. EU Directive 2002/85/EC mandates speed limiters set to 90\,km/h for heavy goods vehicles~\cite{eurlex2002speedlimiter}, and practical motorway limits across Europe range from 80 to 100\,km/h for trucks. Our threshold of 250\,km/h is deliberately generous to accommodate GPS timestamp inaccuracies, brief high-speed rail segments in intermodal chains, and the need to avoid false positives on legitimate data.
 
 \textbf{Reachability Predicate.} Position $p_2$ is reachable from $p_1$ if:
 \[
