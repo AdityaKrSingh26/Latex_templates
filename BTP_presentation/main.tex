@@ -1,6 +1,6 @@
-%----------------------------------------------------------------------------------------
+%---------------------------------------------
 %    PACKAGES AND THEMES
-%----------------------------------------------------------------------------------------
+%---------------------------------------------
 
 \documentclass[aspectratio=169,xcolor=dvipsnames,9pt]{beamer}
 \usetheme{SimpleDarkBlue}
@@ -13,6 +13,9 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit}
 \usepackage{epstopdf}
+
+%--- Custom tiny font size for graph labels ---
+\newcommand{\tinier}{\fontsize{4pt}{5pt}\selectfont}
 
 %--- College logo on top-right corner of every slide ---
 \addtobeamertemplate{frametitle}{}{%
@@ -63,9 +66,9 @@
   \end{beamercolorbox}\vskip\smallskipamount%
 }
 
-%----------------------------------------------------------------------------------------
+%--------------------------------------
 %    TITLE PAGE
-%----------------------------------------------------------------------------------------
+%--------------------------------------
 
 \titlegraphic{\includegraphics[height=1.4cm]{images/iiitm.eps}}
 
@@ -82,9 +85,9 @@
 }
 \date{2026}
 
-%----------------------------------------------------------------------------------------
+%----------------------------------------
 %    PRESENTATION SLIDES
-%----------------------------------------------------------------------------------------
+%----------------------------------------
 
 \begin{document}
 
@@ -97,38 +100,179 @@
 \begin{frame}{Problem \& Motivation}
     \begin{columns}[T]
         \column{0.55\textwidth}
-        GPS-based shipment tracking generates \textbf{millions of records daily}. A critical data quality failure: a single shipment tracked by \textbf{multiple vehicles simultaneously}.
+        The global RTTVP market is valued at $\approx$USD~3.2 billion. Leading platforms process over \textbf{8~billion data points daily} across 1.5~billion annual shipments.
 
-        \vspace{0.5em}
-        \textbf{Root causes:} device misconfiguration, data integration errors, duplicate transmissions, system migration issues.
+        \vspace{0.4em}
+        A critical data quality failure: a single shipment tracked by \textbf{multiple vehicles simultaneously}, producing position histories no single physical object could have generated.
 
-        \vspace{0.5em}
-        \textbf{Observable symptoms:}
+        \vspace{0.4em}
+        \textbf{Data quality dimensions at risk:}
         \begin{itemize}
-            \item \textbf{Impossible teleportation} --- Shanghai to Shenzhen (1{,}200 km) in 5 min
-            \item \textbf{Oscillating locations} --- jumping between distant areas
-            \item \textbf{Concurrent distant positions}
+            \item \textbf{Accuracy:} GPS coordinates vs.\ actual location
+            \item \textbf{Completeness:} gaps from tunnels, battery loss
+            \item \textbf{Consistency:} physically plausible trajectories
+            \item \textbf{Validity:} correct formats and value ranges
         \end{itemize}
 
         \column{0.42\textwidth}
         \begin{alertblock}{Business Impact}
             \begin{itemize}
-                \item Customer confusion
-                \item Incorrect ETAs
-                \item Billing disputes
+                \item Customer confusion \& erratic tracking pages
+                \item Incorrect ETAs \& dock-door scheduling
+                \item Billing disputes (phantom mileage)
                 \item Operational blindness
-                \item SLA violations
+                \item SLA violations \& expedited freight costs
             \end{itemize}
         \end{alertblock}
 
         \vspace{0.3em}
-        \begin{block}{Challenge}
-            Must distinguish errors from \textbf{legitimate handovers} (e.g.\ truck $\to$ ship at port).
-        \end{block}
+        {\footnotesize Poor data quality costs organisations an average of \$12.9M annually.}
     \end{columns}
 \end{frame}
 
-% ---- Slide 3: Real-World Illustrations ----
+% ---- Slide 3: Error Scenarios ----
+\begin{frame}{Error Scenarios: How Multi-Vehicle Binding Occurs}
+    \footnotesize
+    \begin{columns}[T]
+        \column{0.55\textwidth}
+        \begin{block}{Scenario A: Device Misconfiguration}
+            \footnotesize Multiple GPS devices bound to same shipment ID (wrong IMEI mapping, failed device swap).
+        \end{block}
+
+        \vspace{0.1em}
+        \begin{block}{Scenario B: Data Integration Errors}
+            \footnotesize Shipment ID collisions when merging carrier feeds (e.g.\ Carrier~A and Carrier~B both use \texttt{SHIP-12345}). No carrier-scoped namespaces.
+        \end{block}
+
+        \vspace{0.1em}
+        \begin{block}{Scenario C: Duplicate Transmissions}
+            \footnotesize Malfunctioning device or network issues create duplicate position records with slightly different coordinates.
+        \end{block}
+
+        \vspace{0.1em}
+        \begin{block}{Scenario D: System Migration Issues}
+            \footnotesize Historical data from old devices incorrectly linked with new device data during platform migration.
+        \end{block}
+
+        \column{0.42\textwidth}
+        \centering
+        {\small\textbf{Scenario A Illustration}}\\[0.2em]
+        \begin{tikzpicture}[scale=0.88,
+            dbrow/.style={rectangle, draw, fill=blue!8, text width=2.4cm, minimum height=0.55cm, align=center, font=\scriptsize, rounded corners=2pt},
+            shipbox/.style={rectangle, draw, fill=orange!15, text width=1.9cm, minimum height=0.55cm, align=center, font=\scriptsize\bfseries, rounded corners=2pt},
+            arrow/.style={-{Stealth[length=2mm]}, thick},
+            label/.style={font=\tiny\itshape, text=gray}
+        ]
+            \node[label] at (0, 2.2) {Configuration Database};
+            \node[dbrow] (d1) at (0, 1.5) {Device D1 (Truck T1)};
+            \node[dbrow, below=0.35cm of d1] (d2) {Device D2 (Truck T2)};
+            \node[shipbox, right=1.1cm of d1, yshift=-0.48cm] (ship) {SHIP-12345};
+            \draw[arrow, color=red!70] (d1.east) -- (ship.west) node[midway, above, font=\tiny] {assigned};
+            \draw[arrow, color=red!70] (d2.east) -- (ship.west) node[midway, below, font=\tiny] {assigned};
+            \node[label, text=red!70, text width=2.4cm, align=center] at (1.1, -0.25) {Both devices bound to same shipment};
+        \end{tikzpicture}
+
+        \vspace{0.3em}
+        \begin{alertblock}{Result}
+            \footnotesize Dashboard shows shipment alternating between two corridors. Hanover (D1) and Leipzig (D2), 250\,km apart in 3\,s.
+        \end{alertblock}
+    \end{columns}
+\end{frame}
+
+% ---- Slide 4: Observable Symptoms ----
+\begin{frame}{Observable Symptoms}
+    \begin{columns}[T]
+        \column{0.33\textwidth}
+        \centering
+        {\small\textbf{Impossible Teleportation}}\\[0.3em]
+        \begin{tikzpicture}[scale=0.52,
+            point/.style={circle, fill=#1, inner sep=1.5pt},
+            point/.default={black},
+            arrow/.style={-{Stealth[length=1.5mm]}, thick},
+            dasharrow/.style={-{Stealth[length=1.5mm]}, thick, dashed, red!70},
+        ]
+            \draw[arrow] (0,0) -- (7,0) node[right] {\tinier Time};
+            \draw[arrow] (0,0) -- (0,4.5) node[above] {\tinier Pos};
+            \node[point=blue] (p1) at (1,0.8) {};
+            \node[point=blue] (p2) at (2,1.3) {};
+            \node[point=blue] (p3) at (3,1.8) {};
+            \node[point=red]  (p4) at (4,3.8) {};
+            \node[point=blue] (p5) at (5,2.3) {};
+            \node[point=blue] (p6) at (6,2.8) {};
+            \draw[thick, blue] (p1) -- (p2) -- (p3);
+            \draw[dasharrow] (p3) -- (p4);
+            \draw[dasharrow] (p4) -- (p5);
+            \draw[thick, blue] (p5) -- (p6);
+            \node[font=\tinier, blue, left] at (3,1.8) {Shanghai};
+            \node[font=\tinier, red, right] at (4,3.8) {Shenzhen};
+            \node[font=\tinier, red!70, rotate=55] at (3.2,2.9) {1200\,km/5\,min};
+        \end{tikzpicture}
+        \\[0.2em]
+        {\scriptsize Sudden jump: 14{,}400\,km/h implied speed}
+
+        \column{0.33\textwidth}
+        \centering
+        {\small\textbf{Oscillating Locations}}\\[0.3em]
+        \begin{tikzpicture}[scale=0.52,
+            point/.style={circle, fill=#1, inner sep=1.5pt},
+            point/.default={black},
+            arrow/.style={-{Stealth[length=1.5mm]}, thick},
+        ]
+            \draw[arrow] (0,0) -- (7,0) node[right] {\tinier Time};
+            \draw[arrow] (0,0) -- (0,4.5) node[above] {\tinier Pos};
+            \fill[blue!8] (0.3,0.3) rectangle (6.5,1.8);
+            \fill[orange!8] (0.3,2.8) rectangle (6.5,4.3);
+            \node[font=\tinier, blue!60, rotate=270] at (6.7,1.05) {Region A};
+            \node[font=\tinier, orange!60, rotate=270] at (6.7,3.55) {Region B};
+            \node[point=blue] (a1) at (1,0.8) {};
+            \node[point=orange] (b1) at (2,3.5) {};
+            \node[point=blue] (a2) at (3,1.2) {};
+            \node[point=orange] (b2) at (4,3.3) {};
+            \node[point=blue] (a3) at (5,1.5) {};
+            \node[point=orange] (b3) at (6,3.8) {};
+            \draw[thick, gray] (a1) -- (b1) -- (a2) -- (b2) -- (a3) -- (b3);
+            \node[font=\tinier, blue, right] at (5,1.5) {D1};
+            \node[font=\tinier, orange, right] at (6,3.8) {D2};
+        \end{tikzpicture}
+        \\[0.2em]
+        {\scriptsize Interleaved pings from 2 devices}
+
+        \column{0.33\textwidth}
+        \centering
+        {\small\textbf{Concurrent Distant Positions}}\\[0.3em]
+        \begin{tikzpicture}[scale=0.52,
+            point/.style={circle, fill=#1, inner sep=1.5pt},
+            point/.default={black},
+            arrow/.style={-{Stealth[length=1.5mm]}, thick},
+        ]
+            \draw[arrow] (0,0) -- (7,0) node[right] {\tinier Time};
+            \draw[arrow] (0,0) -- (0,4.5) node[above] {\tinier Pos};
+            \node[point=blue] (p1) at (1,1.0) {};
+            \node[point=blue] (p2) at (2,1.5) {};
+            \draw[thick, blue] (p1) -- (p2);
+            \draw[thick, dashed, gray] (4,0) -- (4,4.5) node[above, font=\tinier] {$t_0$};
+            \node[point=blue] (c1) at (4,2.0) {};
+            \node[point=red]  (c2) at (4,3.7) {};
+            \draw[thick, red!60, <->] (4.2,2.0) -- (4.2,3.7) node[midway, right, font=\tinier] {800\,km};
+            \node[point=blue] (p4) at (5.5,2.5) {};
+            \node[point=blue] (p5) at (6.5,2.8) {};
+            \draw[thick, blue] (p4) -- (p5);
+            \node[font=\tinier, blue, left] at (4,2.0) {D1};
+            \node[font=\tinier, red, left] at (4,3.7) {D2};
+        \end{tikzpicture}
+        \\[0.2em]
+        {\scriptsize Same timestamp, 800\,km apart}
+    \end{columns}
+
+    \vspace{0.5em}
+    \begin{block}{Challenge}
+        Must distinguish these anomalous patterns from \textbf{legitimate handovers}:
+        truck $\to$ ship at port, inter-modal transfer at hub, relay handoff on highway.
+        Key difference: legitimate handovers have a \textit{spatial and temporal bridge} (common meeting point within feasible time).
+    \end{block}
+\end{frame}
+
+% ---- Slide 5: Real-World Illustrations ----
 \begin{frame}{The Problem in Practice}
     \begin{columns}[c]
         \column{0.48\textwidth}
@@ -138,8 +282,8 @@
 
         \column{0.48\textwidth}
         \centering
-        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/multiple-vehicles-before.png}\\[0.2em]
-        {\scriptsize \textcolor{red}{Before:} Conflicting GPS trails from two devices}
+        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/graph-clustering-edege-colored-segregation.png}\\[0.2em]
+        {\scriptsize Connected components color-coded by cluster}
     \end{columns}
 
     \vspace{0.3em}
@@ -147,17 +291,18 @@
     \begin{columns}[c]
         \column{0.48\textwidth}
         \centering
-        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/multiple-vehicles after.png}\\[0.2em]
-        {\scriptsize \textcolor{green!50!black}{After:} Trails separated, anomaly identified}
+        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/multiple-vehicles-before.png}\\[0.2em]
+        {\scriptsize \textcolor{red}{Before:} Conflicting GPS trails from two devices}
 
         \column{0.48\textwidth}
         \centering
-        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/graph-clustering-edege-colored-segregation.png}\\[0.2em]
-        {\scriptsize Connected components color-coded by cluster}
+        \includegraphics[width=0.85\linewidth,height=0.3\textheight,keepaspectratio]{images/multiple-vehicles after.png}\\[0.2em]
+        {\scriptsize \textcolor{green!50!black}{After:} Trails separated, anomaly identified}
     \end{columns}
 \end{frame}
 
-% ---- Slide 4: System Overview ----
+
+% ---- Slide 7: System Overview ----
 \begin{frame}{Proposed Framework: System Overview}
     \centering
     \begin{tikzpicture}[
@@ -204,189 +349,241 @@
     \end{tikzpicture}
 \end{frame}
 
-% ---- Slide 4: Graph Theory Background ----
-\begin{frame}{Graph Theory Background}
+% ---- Slide 8: Graph Theory Background ----
+\begin{frame}{Graph Model \& Formulation}
+    \vspace*{-0.5em}
     \begin{columns}[T]
-        \column{0.48\textwidth}
-        \begin{block}{Fundamental Definitions}
-            \begin{itemize}
-                \item \textbf{Graph} $G = (V, E)$: vertices + edges
-                \item \textbf{Directed graph}: edge $(u,v) \neq (v,u)$
-                \item \textbf{DAG}: directed, no cycles
-                \item \textbf{Connected component}: maximal subgraph where every pair is connected
-            \end{itemize}
-        \end{block}
-
-        \begin{block}{Haversine Distance}
-            \small
-            \[
-            d = 2R \cdot \arcsin\!\!\sqrt{\sin^2\!\frac{\Delta\phi}{2} + \cos\phi_i\cos\phi_j\sin^2\!\frac{\Delta\lambda}{2}}
-            \]
-            $R = 6{,}371$ km. Error $< 0.3\%$ vs.\ ellipsoidal.
-        \end{block}
-
-        \column{0.48\textwidth}
+        \column{0.38\textwidth}
         \begin{block}{Notation}
-            \small
+            \footnotesize
             \begin{tabular}{ll}
                 $p_i = (\text{lat}, \text{lon}, t)$ & Position \\
                 $P = \{p_1, \ldots, p_n\}$ & Sorted sequence \\
-                $V_{\max} = 69.4$ m/s & Max speed \\
-                $\tau = 1800$ s & Jitter window \\
-                $T_H = 28800$ s & Handover window \\
+                $V_{\max} = 250$\,km/h & Max feasible speed \\
+                $\tau = 1800$\,s & Jitter window \\
+                $T_H = 28800$\,s & Handover window \\
                 $\alpha = 0.10$ & Min cluster \% \\
                 $s_{\min} = 5$ & Min cluster size \\
             \end{tabular}
         \end{block}
 
-        \begin{block}{Reachability}
-            $p_2$ reachable from $p_1$ iff:
+        \vspace{0.2em}
+        \begin{block}{Reachability Edge}
+            \footnotesize
+            Edge $(p_i, p_j)$ exists iff:
             \[
-            d(p_1, p_2) \leq V_{\max} \cdot (t_2 - t_1)
+            \underbrace{d(p_i,p_j)}_{\text{Haversine}} \leq V_{\max} \cdot (t_j - t_i)
             \]
+            Nodes = GPS positions.\quad Graph is always a \textbf{DAG} (time-ordered, no cycles).
         \end{block}
-    \end{columns}
-\end{frame}
 
-% ---- Slide 5: Graph Formulation ----
-\begin{frame}{Graph Formulation}
-    \begin{block}{Position Reachability Graph $G = (V, E)$}
-        \begin{itemize}
-            \item Each GPS position $p_i = (\text{lat}, \text{lon}, t)$ is a \textbf{vertex}
-            \item Edge $(p_i, p_j)$ exists iff movement is physically feasible:
-        \end{itemize}
-        \[
-        \mathrm{reachable}(p_i, p_j) \iff \underbrace{d(p_i, p_j)}_{\text{Haversine}} \leq V_{\max} \cdot (t_j - t_i), \qquad V_{\max} = 250 \text{ km/h}
-        \]
-    \end{block}
-
-    \vspace{0.3em}
-
-    \begin{columns}[T]
-        \column{0.48\textwidth}
+        \column{0.58\textwidth}
         \begin{block}{Jitter Tolerance}
-            GPS noise handled by checking \textbf{multiple recent} positions within $\tau = 30$ min window:
-            \[
-            \exists\, p_i \in W(p_j, C, \tau) : \mathrm{reachable}(p_i, p_j)
-            \]
+            \footnotesize
+            GPS noise handled by checking \textbf{multiple recent} positions in window $\tau$:
+            $\exists\, p_i \in W(p_j, C, \tau) : \mathrm{reachable}(p_i, p_j)$\\
+            $W$: positions in cluster $C$ within $\tau = 30$\,min before $p_j$.
         \end{block}
 
-        \column{0.48\textwidth}
+        \vspace{0.2em}
         \begin{block}{Handover Detection}
-            Legitimate transfers (truck $\to$ ship) detected via boundary positions of adjacent clusters:
-            \[
-            |t_i - t_j| \leq 8\text{h} \;\wedge\; \mathrm{reachable}(p_i, p_j)
-            \]
+            \footnotesize
+            Legitimate inter-vehicle transfers detected via \textbf{boundary positions}:\\
+            $\exists\, p_i \in \mathrm{last}_k(C_1),\; p_j \in \mathrm{first}_k(C_2) :$
+            $|t_i - t_j| \leq T_H \;\wedge\; \mathrm{reachable}(p_i, p_j)$\\
+            $k = 5$ boundary positions, $T_H = 8$\,h.
+        \end{block}
+
+        \vspace{0.2em}
+        \begin{block}{Significance Filter}
+            \footnotesize
+            A cluster is \textbf{significant} iff $|C| \geq \max(s_{\min},\; \alpha \cdot n)$.\\
+            Filters GPS jitter / outlier clusters from the multi-vehicle decision.
         \end{block}
     \end{columns}
 \end{frame}
 
-% ---- Slide 5: Key Theorems ----
-\begin{frame}{Key Theorems \& Properties}
-    \begin{block}{Theorem 1: Single Component $\Rightarrow$ Single Vehicle}
-        If the Position Reachability Graph has exactly one weakly connected component, all positions are consistent with single-vehicle tracking.
-    \end{block}
+% ---- Slide 10: Key Theorems & Correctness ----
+\begin{frame}{Key Theorems \& Correctness}
+    \footnotesize
+    \begin{columns}[T]
+        \column{0.50\textwidth}
+        \begin{block}{Theorem 1: Single Component $\Rightarrow$ Single Vehicle}
+            \footnotesize One weakly connected component $\Rightarrow$ all positions consistent with one vehicle.\\
+            {\scriptsize\textit{Proof:} Every position reachable from every other $\Rightarrow$ feasible single-vehicle trajectory.}
+        \end{block}
 
-    \vspace{0.3em}
+        \vspace{0.15em}
+        \begin{alertblock}{Theorem 2: Multiple Large Components $\Rightarrow$ Multiple Vehicles}
+            \footnotesize $G$ has $\geq 2$ components each with $\geq 10\%$ of positions $\Rightarrow$ multiple vehicles.\\
+            {\scriptsize\textit{Proof:} Two large components cannot both be noise; no edges between them $\Rightarrow$ separate vehicles.}
+        \end{alertblock}
 
-    \begin{alertblock}{Theorem 2: Multiple Large Components $\Rightarrow$ Multiple Vehicles}
-        If $G$ has $\geq 2$ components each containing $\geq 10\%$ of total positions, multiple vehicles are tracking the shipment.
-    \end{alertblock}
+        \vspace{0.15em}
+        \begin{block}{Theorem 3: Handover Preserves Validity}
+            \footnotesize Two components merging via valid handover $\Rightarrow$ valid single-vehicle tracking with transfer.
+        \end{block}
 
-    \vspace{0.3em}
+        \column{0.47\textwidth}
+        \begin{block}{Lemma 1: Completeness}
+            \footnotesize All positions from one vehicle $\Rightarrow$ algorithm returns \textbf{TRUE}.\\
+            {\scriptsize\textit{Proof:} Single vehicle positions are mutually reachable; clustering yields one component $\Rightarrow$ TRUE.}
+        \end{block}
 
-    \begin{block}{Theorem 3: Handover Preserves Validity}
-        If two components can be merged via a valid handover, the merged component represents valid single-vehicle tracking (with transfer).
-    \end{block}
+        \vspace{0.15em}
+        \begin{block}{Lemma 2: Soundness}
+            \footnotesize Two vehicles at distant locations $\Rightarrow$ algorithm returns \textbf{FALSE}.\\
+            {\scriptsize\textit{Proof:} Impossible speeds prevent edges across vehicles $\Rightarrow$ separate significant clusters $\Rightarrow$ FALSE.}
+        \end{block}
 
-    \vspace{0.3em}
-
-    \textbf{Graph properties:} always a DAG (edges follow time), reachability is \textbf{non-transitive}, significance filters noise: $\mathrm{significant}(C) \iff |C| \geq \max(5,\; 0.10 \cdot n)$
+        \vspace{0.15em}
+        \begin{block}{Mapping to Standard Problems}
+            \scriptsize
+            \begin{tabular}{ll}
+                \toprule
+                \textbf{Our Problem} & \textbf{Standard Problem} \\
+                \midrule
+                Initial clustering & Connected components \\
+                Cluster merging & Iterative pairwise union \\
+                Significance test & Component size threshold \\
+                Handover detection & Boundary reachability \\
+                \bottomrule
+            \end{tabular}
+        \end{block}
+    \end{columns}
 \end{frame}
 
-% ---- Slide 6: Algorithm Design ----
+
 \begin{frame}{Algorithm: SingleVehicleCheck}
+    \vspace*{-0.8em}
     \begin{columns}[T]
-        \column{0.52\textwidth}
+        \column{0.50\textwidth}
+        \begin{block}{Key Sub-Algorithms}
+            \scriptsize
+            \begin{enumerate}
+                \item \textsc{PreprocessPositions}: filter \& sort
+                \item \textsc{BuildInitialClusters}: online clustering
+                \item \textsc{IsReachable}: Haversine + speed check
+                \item \textsc{GetRecentPositions}: jitter window
+                \item \textsc{MergeClustersViaHandovers}: iterative merge
+                \item \textsc{CanHandover}: boundary reachability
+                \item \textsc{MakeDecision}: significance threshold
+            \end{enumerate}
+        \end{block}
+
+        \vspace{0.15em}
+        \begin{block}{Clustering (Phase 2): Pseudocode}
+            \scriptsize
+            \textbf{for each} position $p$ chronologically:\\
+            \quad \textbf{for each} existing cluster $C$ (newest first):\\
+            \quad\quad $\mathit{recent} \leftarrow$ last 3 positions of $C$ within $\tau$\\
+            \quad\quad \textbf{if} any $q \in \mathit{recent}$ reachable from $p$: assign $p$ to $C$; \textbf{break}\\
+            \quad \textbf{if} not assigned: create new cluster $\{p\}$\\
+            Merge clusters via handover predicate (iterate until stable).
+        \end{block}
+
+        \vspace{0.15em}
+        \begin{block}{Decision (Phase 3)}
+            \scriptsize
+            $\mathit{threshold} \leftarrow \max(s_{\min},\; \alpha \cdot n)$\quad
+            0 sig.\ clusters $\to$ \textbf{UNCERTAIN} $\cdot$
+            1 $\to$ \textbf{TRUE} $\cdot$
+            $\geq\!2$ $\to$ \alert{\textbf{FALSE}}
+        \end{block}
+
+        \column{0.46\textwidth}
         \centering
         \begin{tikzpicture}[
-            phase/.style={rectangle, draw=DarkBlue, fill=blue!8, text width=5.5cm, minimum height=0.7cm, align=center, rounded corners=4pt, font=\small\bfseries},
+            phase/.style={rectangle, draw=DarkBlue, fill=blue!8, text width=4.0cm, minimum height=0.6cm, align=center, rounded corners=4pt, font=\footnotesize\bfseries},
             arrow/.style={-{Stealth[length=2.5mm]}, thick, DarkBlue}
         ]
-            \node[phase] (p1) {Phase 1: Preprocessing \\ {\footnotesize Filter nulls/NaN, validate ranges, sort}};
-            \node[phase, below=0.8cm of p1] (p2) {Phase 2: Clustering \\ {\footnotesize Online reachability clustering + handover merging}};
-            \node[phase, below=0.8cm of p2] (p3) {Phase 3: Decision \\ {\footnotesize Count significant clusters $\to$ result}};
+            \node[phase] (p1) {Phase 1: Preprocessing \\ {\scriptsize Filter nulls/NaN, validate ranges, sort}};
+            \node[phase, below=0.4cm of p1] (p2) {Phase 2: Clustering \\ {\scriptsize Online reachability + handover merging}};
+            \node[phase, below=0.4cm of p2] (p3) {Phase 3: Decision \\ {\scriptsize Count significant clusters $\to$ result}};
             \draw[arrow] (p1) -- (p2);
             \draw[arrow] (p2) -- (p3);
         \end{tikzpicture}
 
-        \column{0.45\textwidth}
-        \begin{block}{Clustering (Phase 2)}
-            For each position chronologically:
-            \begin{enumerate}
-                \item Check recent positions in existing clusters (jitter window $\tau$, up to 3)
-                \item \textbf{Reachable?} $\to$ assign to cluster
-                \item \textbf{Not?} $\to$ new cluster
-            \end{enumerate}
-            Then merge clusters via handover predicate.
-        \end{block}
-
-        \begin{block}{Decision (Phase 3)}
-            0 significant $\to$ UNCERTAIN\\
-            1 significant $\to$ TRUE\\
-            $\geq 2$ significant $\to$ \alert{FALSE}
+        \vspace{0.4em}
+        \begin{block}{Haversine Distance}
+            \scriptsize
+            \[
+            d = 2R \cdot \arcsin\!\sqrt{\sin^2\!\tfrac{\Delta\phi}{2} + \cos\phi_i\cos\phi_j\sin^2\!\tfrac{\Delta\lambda}{2}}
+            \]
+            $R = 6{,}371$\,km.\quad Edge exists iff $d \leq V_{\max}\cdot\Delta t$,\; $V_{\max}=250$\,km/h.
         \end{block}
     \end{columns}
 \end{frame}
 
-% ---- Slide 7: Worked Example ----
-\begin{frame}{Worked Example: Shanghai \& Shenzhen}
+% ---- Slide 12: Worked Example (Expanded) ----
+\begin{frame}{Worked Example: Shanghai \& Shenzhen (12 Positions)}
     \begin{columns}[T]
-        \column{0.52\textwidth}
-        \begin{block}{Input (6 GPS positions)}
-            \footnotesize
-            \begin{tabular}{llll}
-                $p_1$: & Shanghai & 31.23\textdegree N & 08:00 \\
-                $p_2$: & Shenzhen & 22.55\textdegree N & 08:15 \\
-                $p_3$: & Shanghai & 31.24\textdegree N & 09:00 \\
-                $p_4$: & \textcolor{red}{NaN} & & 09:30 \\
-                $p_5$: & Shenzhen & 22.56\textdegree N & 10:00 \\
-                $p_6$: & Shanghai & 31.25\textdegree N & 10:30 \\
+        \column{0.50\textwidth}
+        \begin{block}{Input: 12 Raw GPS Positions}
+            \scriptsize
+            \begin{tabular}{lllll}
+                $p_1$: & Shanghai & 31.23\textdegree N & 121.47\textdegree E & 08:00 \\
+                $p_2$: & Shenzhen & 22.55\textdegree N & 114.05\textdegree E & 08:15 \\
+                $p_3$: & Shanghai & 31.24\textdegree N & 121.46\textdegree E & 09:00 \\
+                $p_4$: & \textcolor{red}{NaN} & & & 09:30 \\
+                $p_5$: & Shenzhen & 22.56\textdegree N & 114.06\textdegree E & 10:00 \\
+                $p_6$: & Shanghai & 31.25\textdegree N & 121.48\textdegree E & 10:30 \\
+                $p_7$: & Shenzhen & 22.54\textdegree N & 114.07\textdegree E & 11:00 \\
+                $p_8$: & Shanghai & 31.22\textdegree N & 121.49\textdegree E & 11:30 \\
+                $p_9$: & Shenzhen & 22.57\textdegree N & 114.04\textdegree E & 12:00 \\
+                $p_{10}$: & Shanghai & 31.26\textdegree N & 121.45\textdegree E & 12:30 \\
+                $p_{11}$: & \textcolor{red}{NaN} & & & 13:00 \\
+                $p_{12}$: & Shenzhen & 22.58\textdegree N & 114.08\textdegree E & 13:30 \\
             \end{tabular}
         \end{block}
 
-        \textbf{Preprocess:} remove $p_4$ $\to$ 5 valid positions.
+        \textbf{Step 1 -- Preprocess:} Remove $p_4$, $p_{11}$ (NaN) $\to$ 10 valid positions.
 
-        \textbf{Cluster:} Shanghai $\{p_1, p_3, p_6\}$, Shenzhen $\{p_2, p_5\}$. No cross-edges (1{,}200 km in 15 min = impossible).
+        \vspace{0.2em}
+        \textbf{Step 2 -- Cluster:} Shanghai--Shenzhen $\approx$ 1{,}200\,km. Transitions require $>$ 4{,}800\,km/h. No cross-cluster edges.
 
-        \column{0.45\textwidth}
-        \begin{block}{Connected Components}
+        \column{0.47\textwidth}
+        \begin{block}{Step 3: Connected Components}
             \centering
-            \begin{tikzpicture}[>=Stealth, scale=0.9]
-                \node[circle, draw, fill=blue!30, minimum size=0.5cm, font=\tiny\bfseries] (p1) at (0,0) {$p_1$};
-                \node[circle, draw, fill=blue!30, minimum size=0.5cm, font=\tiny\bfseries] (p3) at (1,0) {$p_3$};
-                \node[circle, draw, fill=blue!30, minimum size=0.5cm, font=\tiny\bfseries] (p6) at (2,0) {$p_6$};
-                \draw[blue!60, thick] (p1) -- (p3);
-                \draw[blue!60, thick] (p3) -- (p6);
-                \draw[blue!60, thick, bend left=30] (p1) to (p6);
-                \node[circle, draw, fill=red!30, minimum size=0.5cm, font=\tiny\bfseries] (p2) at (3.5,0) {$p_2$};
-                \node[circle, draw, fill=red!30, minimum size=0.5cm, font=\tiny\bfseries] (p5) at (4.5,0) {$p_5$};
-                \draw[red!60, thick] (p2) -- (p5);
+            \begin{tikzpicture}[>=Stealth, scale=0.75]
+                % Blue cluster (Shanghai)
+                \node[circle, draw, fill=blue!30, minimum size=0.45cm, font=\tiny\bfseries] (p1) at (0,0) {$p_1$};
+                \node[circle, draw, fill=blue!30, minimum size=0.45cm, font=\tiny\bfseries] (p3) at (0.9,0) {$p_3$};
+                \node[circle, draw, fill=blue!30, minimum size=0.45cm, font=\tiny\bfseries] (p6) at (1.8,0) {$p_6$};
+                \node[circle, draw, fill=blue!30, minimum size=0.45cm, font=\tiny\bfseries] (p8) at (2.7,0) {$p_8$};
+                \node[circle, draw, fill=blue!30, minimum size=0.45cm, font=\tiny\bfseries] (p10) at (3.6,0) {$p_{10}$};
+                \draw[blue!60, thick] (p1) -- (p3) -- (p6) -- (p8) -- (p10);
+                \node[font=\tiny, blue, above=0.15cm of p6] {Shanghai (5)};
+                % Red cluster (Shenzhen)
+                \node[circle, draw, fill=red!30, minimum size=0.45cm, font=\tiny\bfseries] (p2) at (5.2,0) {$p_2$};
+                \node[circle, draw, fill=red!30, minimum size=0.45cm, font=\tiny\bfseries] (p5) at (6.1,0) {$p_5$};
+                \node[circle, draw, fill=red!30, minimum size=0.45cm, font=\tiny\bfseries] (p7) at (7.0,0) {$p_7$};
+                \node[circle, draw, fill=red!30, minimum size=0.45cm, font=\tiny\bfseries] (p9) at (7.9,0) {$p_9$};
+                \node[circle, draw, fill=red!30, minimum size=0.45cm, font=\tiny\bfseries] (p12) at (8.8,0) {$p_{12}$};
+                \draw[red!60, thick] (p2) -- (p5) -- (p7) -- (p9) -- (p12);
+                \node[font=\tiny, red, above=0.15cm of p7] {Shenzhen (5)};
             \end{tikzpicture}
         \end{block}
 
         \vspace{0.3em}
 
-        \begin{alertblock}{Decision}
-            $n = 5$, threshold $= \max(5, 0.5) = 5$\\
-            Significant clusters $= 2$\\[0.3em]
-            \textbf{Result: FALSE}\\
-            Multiple vehicles detected.
+        \begin{block}{Step 4: Handover Check}
+            \footnotesize
+            Boundary positions of clusters are $\approx$ 1{,}200\,km apart. No feasible handover $\Rightarrow$ no merging.
+        \end{block}
+
+        \vspace{0.3em}
+
+        \begin{alertblock}{Step 5: Decision}
+            $n = 10$, threshold $= \max(5,\; 0.1 \times 10) = 5$\\
+            Cluster sizes: 5 (Shanghai) $\geq 5$ \checkmark, \quad 5 (Shenzhen) $\geq 5$ \checkmark \\
+            Significant clusters $= 2$ $\Rightarrow$ \textbf{Result: FALSE} (Multiple vehicles detected).
         \end{alertblock}
     \end{columns}
 \end{frame}
 
-% ---- Slide 8: Complexity ----
+
+% ---- Slide 14: Complexity & Edge Cases ----
 \begin{frame}{Complexity Analysis \& Edge Cases}
     \begin{columns}[T]
         \column{0.52\textwidth}
@@ -397,7 +594,7 @@
                 \textbf{Phase} & \textbf{Time} & \textbf{Space} \\
                 \midrule
                 Preprocessing & $O(n \log n)$ & $O(n)$ \\
-                Clustering & $O(n \cdot m)$ & $O(n)$ \\
+                Initial Clustering & $O(n \cdot m)$ & $O(n)$ \\
                 Handover Merge & $O(m^3 \cdot b^2)$ & $O(m)$ \\
                 Decision & $O(m)$ & $O(1)$ \\
                 \midrule
@@ -431,18 +628,23 @@
         \vspace{0.3em}
 
         \begin{block}{Input Validation}
-            Null, NaN, and range checks on coordinates and timestamps before processing.
+            \begin{itemize}
+                \item Null \& NaN checks on coordinates
+                \item Range: lat $\in [-90, 90]$, lon $\in [-180, 180]$
+                \item Timestamp validation
+                \item Empty input $\to$ UNCERTAIN
+            \end{itemize}
         \end{block}
     \end{columns}
 \end{frame}
 
-% ---- Slide 10: Thank You ----
+% ---- Slide 15: Thank You ----
 \begin{frame}
     \Huge{\centerline{\textbf{Thank You}}}
     \vspace{1em}
     \normalsize{\centerline{Questions?}}
 \end{frame}
 
-%----------------------------------------------------------------------------------------
+%--------------------------------------------------
 
 \end{document}
